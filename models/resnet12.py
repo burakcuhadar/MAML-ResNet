@@ -196,5 +196,8 @@ class Models:
             initializer=conv_initializer, dtype=dtype)
         return weights
 
-    def construct_resnet_bn_vars(self):
+    def construct_resnet_bn_weights(self):
+        pass
+
+    def construct_resnet_bn_stats(self):
         pass

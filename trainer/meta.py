@@ -22,6 +22,8 @@ from data_generator.meta_data_generator import MetaDataGenerator
 from models.meta_model import MakeMetaModel
 from tensorflow.python.platform import flags
 from utils.misc import process_batch
+from sklearn.metrics import roc_auc_score
+
 
 FLAGS = flags.FLAGS
 
@@ -258,6 +260,7 @@ class MetaTrainer:
             if train_idx % FLAGS.meta_val_print_step == 0:
                 test_loss = []
                 test_accs = []
+                test_aucs = []
                 for test_itr in range(FLAGS.meta_intrain_val_sample):
                     this_episode = data_generator.load_episode(index=test_itr, data_type='val')
                     test_inputa = this_episode[0][np.newaxis, :]
@@ -268,10 +271,12 @@ class MetaTrainer:
                     test_feed_dict = {self.model.inputa: test_inputa, self.model.inputb: test_inputb, \
                         self.model.labela: test_labela, self.model.labelb: test_labelb, \
                         self.model.meta_lr: 0.0}
-                    test_input_tensors = [self.model.total_loss, self.model.total_accuracy]
+                    test_input_tensors = [self.model.total_loss, self.model.total_accuracy, self.model.softmax_probs]
                     test_result = self.sess.run(test_input_tensors, test_feed_dict)
                     test_loss.append(test_result[0])
                     test_accs.append(test_result[1])
+                    test_aucs.append(roc_auc_score(test_labelb[0], test_result[2][0]))
+
 
                 valsum_feed_dict = {self.model.input_val_loss: \
                     np.mean(test_loss)*np.float(FLAGS.meta_batch_size)/np.float(FLAGS.shot_num), \
@@ -279,7 +284,8 @@ class MetaTrainer:
                 valsum = self.sess.run(self.model.val_summ_op, valsum_feed_dict)
                 train_writer.add_summary(valsum, train_idx)
                 print_str = '[***] Val Loss:' + str(np.mean(test_loss)*FLAGS.meta_batch_size) + \
-                    ' Val Acc:' + str(np.mean(test_accs)*FLAGS.meta_batch_size)
+                    ' Val Acc:' + str(np.mean(test_accs)*FLAGS.meta_batch_size) + \
+                    ' Val Auc:' + str(np.mean(test_aucs))
                 print(print_str)
 
             # Reduce the meta learning rate to half after several iterations
@@ -312,6 +318,7 @@ class MetaTrainer:
         np.random.seed(1)
         # Generate empty list to record accuracies
         metaval_accuracies = []
+        metaval_aucs = []
         # Load data for meta-test
         data_generator.load_data(data_type='test')
         for test_idx in trange(NUM_TEST_POINTS):
@@ -323,13 +330,23 @@ class MetaTrainer:
             labelb = this_episode[3][np.newaxis, :]
             feed_dict = {self.model.inputa: inputa, self.model.inputb: inputb, \
                 self.model.labela: labela, self.model.labelb: labelb, self.model.meta_lr: 0.0}
-            result = self.sess.run(self.model.metaval_total_accuracies, feed_dict)
-            metaval_accuracies.append(result)
-        # Calculate the mean accuarcies and the confidence intervals
+            result = self.sess.run([self.model.metaval_total_accuracies, self.model.metaval_softmax_probs],
+                                   feed_dict)
+            metaval_accuracies.append(result[0])
+            metaval_aucs.append(roc_auc_score(labelb[0], result[1][0]))
+
+        # Calculate the mean accuracies and the confidence intervals
         metaval_accuracies = np.array(metaval_accuracies)
         means = np.mean(metaval_accuracies, 0)
         stds = np.std(metaval_accuracies, 0)
         ci95 = 1.96*stds/np.sqrt(NUM_TEST_POINTS)
+
+        # Calculate the mean auc score and the confidence interval
+        auc_mean = np.mean(metaval_aucs)
+        std = np.std(metaval_aucs)
+        ci95 = 1.96 * std / np.sqrt(NUM_TEST_POINTS)
+        print('Test AUC')
+        print(auc_mean, " +- ", ci95)
 
         # Print the meta-test results
         print('Test accuracies and confidence intervals')

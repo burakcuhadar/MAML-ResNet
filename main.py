@@ -9,9 +9,12 @@
 ##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 import os
+import numpy as np
 from tensorflow.python.platform import flags
 from trainer.meta import MetaTrainer
 from trainer.pre import PreTrainer
+from data_generator.meta_data_generator import MetaDataGenerator
+
 
 FLAGS = flags.FLAGS
 
@@ -125,13 +128,29 @@ if not os.path.exists(pretrain_dir):
 
 # If FLAGS.redo_init is true, delete the previous intialization weights.
 if FLAGS.redo_init:
-    if not os.path.exists('./logs/init_weights'):
+    if os.path.exists('./logs/init_weights'):
         os.system('rm -r ./logs/init_weights')
         print('Init weights have been deleted')
     else:
         print('No init weights')
 
 def main():
+    data_generator = MetaDataGenerator()
+    data_generator.generate_data(data_type='val')
+    data_generator.load_data(data_type='val')
+    #data_generator.generate_data(data_type='test')
+    this_episode = data_generator.load_episode(index=1, data_type='val')
+    test_inputa = this_episode[0][np.newaxis, :]
+    test_labela = this_episode[1][np.newaxis, :]
+    test_inputb = this_episode[2][np.newaxis, :]
+    test_labelb = this_episode[3][np.newaxis, :]
+
+    print(test_inputa.shape)
+    print(test_labela.shape)
+    print(test_inputb.shape)
+    print(test_labelb.shape)
+
+    '''
     # Set GPU device id
     print('Using GPU ' + str(FLAGS.device_id))
     os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.device_id)
@@ -143,6 +162,7 @@ def main():
         trainer = MetaTrainer(exp_string, logdir, pre_string)
     else:
         raise Exception('Please set correct phase')           
+    '''
 
 if __name__ == "__main__":
     main()

@@ -33,7 +33,6 @@ def MakeMetaModel():
             from models.resnet18 import Models
     else:
         print('Please set the correct backbone')
-    # TODO save inner lrs
 
     class MetaModel(Models):
         """The class for the meta models. This class is inheritance from Models, so some variables are in the Models class."""
@@ -92,8 +91,6 @@ def MakeMetaModel():
                     lossb_list.append(lossb)
                     # Calculate the gradients for the fc layer
                     grads = tf.gradients(lossa, list(fc_weights.values()) + list(weights.values()))
-                    #print(list(fc_weights.keys()) + list(weights.keys()))
-                    #print(grads)
                     gradients = dict(zip(list(fc_weights.keys()) + list(weights.keys()), grads))
                     # Use gradient descent to update the fc layer
                     fast_fc_weights = dict(zip(fc_weights.keys(), [fc_weights[key] - \
@@ -121,11 +118,13 @@ def MakeMetaModel():
                     outputb = self.forward_fc(emb_outputb, fast_fc_weights)
                     # Calculate the final episode test loss, it is the loss for the episode on meta-train 
                     final_lossb = self.loss_func(outputb, labelb)
+                    # Used for calculating accuracy and AUC score
+                    softmax_probs = tf.nn.softmax(outputb)
                     # Calculate the final episode test accuarcy
-                    accb = tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax(outputb), 1), tf.argmax(labelb, 1))
+                    accb = tf.contrib.metrics.accuracy(tf.argmax(softmax_probs, 1), tf.argmax(labelb, 1))
 
                     # Reorganize all the outputs to a list
-                    task_output = [final_lossb, lossb_list, lossa_list, accb]
+                    task_output = [final_lossb, lossb_list, lossa_list, accb, softmax_probs]
 
                     return task_output
 
@@ -134,13 +133,13 @@ def MakeMetaModel():
                     unused = task_metalearn((self.inputa[0], self.inputb[0], self.labela[0], self.labelb[0]), False)
 
                 # Set the dtype of the outputs
-                out_dtype = [tf.float32, [tf.float32]*num_updates, [tf.float32]*num_updates, tf.float32]
+                out_dtype = [tf.float32, [tf.float32]*num_updates, [tf.float32]*num_updates, tf.float32, tf.float32]
 
                 # Run two episodes for a meta batch using parallel setting
                 result = tf.map_fn(task_metalearn, elems=(self.inputa, self.inputb, self.labela, self.labelb), \
                     dtype=out_dtype, parallel_iterations=FLAGS.meta_batch_size)
                 # Seperate the outputs to different variables
-                lossb, lossesb, lossesa, accsb = result
+                lossb, lossesb, lossesa, accsb, softmax_probs = result
 
             print("Constructing output variables")
             # Set the variables to output from the tensorflow graph
@@ -148,10 +147,15 @@ def MakeMetaModel():
             self.total_accuracy = total_accuracy = tf.reduce_sum(accsb) / tf.to_float(FLAGS.meta_batch_size)
             self.total_lossa = total_lossa = [tf.reduce_sum(lossesa[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
             self.total_lossb = total_lossb = [tf.reduce_sum(lossesb[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
+            # Used for computing AUC score
+            self.softmax_probs = softmax_probs
 
             # Set the meta-train optimizer
             optimizer = tf.train.AdamOptimizer(self.meta_lr)
-            self.metatrain_op = optimizer.minimize(total_loss, var_list=list(weights.values()) + list(fc_weights.values()))
+            self.metatrain_op = optimizer.minimize(total_loss,
+                                                   var_list=list(weights.values()) \
+                                                           + list(fc_weights.values())
+                                                           + inner_lrs)
 
             print("Setting the tensorboard")
             # Set the tensorboard
@@ -233,28 +237,30 @@ def MakeMetaModel():
                             inner_lrs[self.get_lr_idx(j,key)] * gradients[key] for key in fast_weights.keys()]))
                         emb_outputb = self.forward_resnet(inputb, fast_weights, reuse=True)
                         outputb = self.forward_fc(emb_outputb, fast_fc_weights)
-                        accb = tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax(outputb), 1), tf.argmax(labelb, 1))
+                        # Used for calculating accuracy and AUC score
+                        softmax_probs = tf.nn.softmax(outputb)
+                        accb = tf.contrib.metrics.accuracy(tf.argmax(softmax_probs, 1), tf.argmax(labelb, 1))
                         accb_list.append(accb)
 
                     lossb = self.loss_func(outputb, labelb)
 
-                    task_output = [lossb, accb, accb_list]
+                    task_output = [lossb, accb, accb_list, softmax_probs]
 
                     return task_output
 
                 if FLAGS.norm is not None:
                     unused = task_metalearn((self.inputa[0], self.inputb[0], self.labela[0], self.labelb[0]), False)
 
-                out_dtype = [tf.float32, tf.float32, [tf.float32]*num_updates]
+                out_dtype = [tf.float32, tf.float32, [tf.float32]*num_updates, tf.float32]
 
                 result = tf.map_fn(task_metalearn, elems=(self.inputa, self.inputb, self.labela, self.labelb), \
                     dtype=out_dtype, parallel_iterations=FLAGS.meta_batch_size)
-                lossesb, accsb, accsb_list = result
+                lossesb, accsb, accsb_list, softmax_probs = result
 
             self.metaval_total_loss = total_loss = tf.reduce_sum(lossesb)
             self.metaval_total_accuracy = total_accuracy = tf.reduce_sum(accsb)
             self.metaval_total_accuracies = total_accuracies =[tf.reduce_sum(accsb_list[j]) for j in range(num_updates)]
-
+            self.metaval_softmax_probs = softmax_probs
 
         def construct_inner_lrs(self, num_updates):
             inner_lrs = []
