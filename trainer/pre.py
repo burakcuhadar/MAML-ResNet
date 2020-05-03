@@ -97,4 +97,14 @@ class PreTrainer:
             if (itr!=0) and itr % FLAGS.pre_save_step == 0:
                 print('Saving pretrain weights to npy')
                 weights = self.sess.run(self.model.weights)
+                bn_vars = self.sess.run(self.model.bn_vars)
                 np.save(os.path.join(weights_save_dir, "weights_{}.npy".format(itr)), weights)
+                np.save(os.path.join(weights_save_dir, "bn_vars_{}.npy".format(itr)), bn_vars)
+
+        # Save the final model
+        print('Saving final pretrain weights to npy')
+        weights = self.sess.run(self.model.weights)
+        bn_vars = self.sess.run(self.model.bn_vars)
+        np.save(os.path.join(weights_save_dir, "weights_{}.npy".format(itr+1)), weights)
+        np.save(os.path.join(weights_save_dir, "bn_vars_{}.npy".format(itr+1)), bn_vars)
+

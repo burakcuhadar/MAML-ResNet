@@ -12,6 +12,8 @@
 import tensorflow as tf
 from tensorflow.python.platform import flags
 
+from utils.misc import get_bn_vars
+
 FLAGS = flags.FLAGS
 
 def MakePreModel():
@@ -24,13 +26,14 @@ def MakePreModel():
             from resnet12 import Models
         except ImportError:#python3
             from models.resnet12 import Models
-    elif FLAGS.backbone_arch=='resnet18':
+    elif FLAGS.backbone_arch=='conv4':
         try:#python2
-            from resnet18 import Models
+            from conv4 import Models
         except ImportError:#python3
-            from models.resnet18 import Models
+            from models.conv4 import Models
     else:
         print('Please set the correct backbone')
+
 
     class PreModel(Models):
         """The class for pre-train model."""
@@ -43,22 +46,27 @@ def MakePreModel():
             self.input = input_tensors['pretrain_input']
             self.label = input_tensors['pretrain_label']
             with tf.variable_scope('pretrain-model', reuse=None) as training_scope:
-                self.weights = weights = self.construct_resnet_weights()
+                self.weights = weights = self.construct_weights()
                 self.fc_weights = fc_weights = self.construct_fc_weights()
 
                 if is_val is False:
-                    self.pretrain_task_output = self.forward_fc(self.forward_pretrain_resnet(self.input, weights, reuse=False), fc_weights)
+                    self.pretrain_task_output = self.forward_fc(
+                        self.forward_pretrain(self.input, weights, is_training=tf.constant(True), reuse=False), fc_weights)
+                    self.bn_vars = bn_vars = get_bn_vars('pretrain-model')
+
                     self.pretrain_task_loss = self.pretrain_loss_func(self.pretrain_task_output, self.label)
                     optimizer = tf.train.AdamOptimizer(self.pretrain_lr)
-                    self.pretrain_op = optimizer.minimize(self.pretrain_task_loss, var_list=weights.values()+fc_weights.values())
-                    self.pretrain_task_accuracy = tf.reduce_mean(tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax( \
+                    self.pretrain_op = optimizer.minimize(self.pretrain_task_loss)
+                    self.pretrain_task_accuracy = tf.reduce_mean(tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax(
                         self.pretrain_task_output), 1), tf.argmax(self.label, 1)))
                     tf.summary.scalar('pretrain train loss', self.pretrain_task_loss)
                     tf.summary.scalar('pretrain train accuracy', self.pretrain_task_accuracy)
                 else:
-                    self.pretrain_task_output_val = self.forward_fc(self.forward_pretrain_resnet(self.input, weights, reuse=True), fc_weights)
-                    self.pretrain_task_accuracy_val = tf.reduce_mean(tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax( \
+                    self.pretrain_task_output_val = self.forward_fc(
+                        self.forward_pretrain(self.input, weights, is_training=tf.constant(False), reuse=True), fc_weights)
+                    self.pretrain_task_accuracy_val = tf.reduce_mean(tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax(
                         self.pretrain_task_output_val), 1), tf.argmax(self.label, 1)))
                     tf.summary.scalar('pretrain val accuracy', self.pretrain_task_accuracy_val)
+
 
     return PreModel()

@@ -13,7 +13,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.platform import flags
-from utils.misc import mse, softmaxloss, xent, resnet_conv_block, resnet_nob_conv_block
+from utils.misc import softmaxloss, xent, resnet_conv_block, resnet_nob_conv_block
 
 FLAGS = flags.FLAGS
 
@@ -43,7 +43,7 @@ class Models:
         self.img_size = FLAGS.img_size
 
 
-    def forward_pretrain_resnet(self, inp, weights, reuse=False, scope=''):
+    def forward_pretrain(self, inp, weights, is_training=False, reuse=False, scope=''):
         """The function to forward the resnet during pre-train phase
         Args:
           inp: input feature maps.
@@ -52,31 +52,33 @@ class Models:
           scope: the label to indicate which layer we are processing.
         Return:
           The processed feature maps.
-        """  
+        """
+
         inp = tf.reshape(inp, [-1, self.img_size, self.img_size, self.channels])
-        net = self.pretrain_block_forward(inp, weights, 'block1', reuse, scope)
-        net = self.pretrain_block_forward(net, weights, 'block2', reuse, scope)
-        net = self.pretrain_block_forward(net, weights, 'block3', reuse, scope)
-        net = self.pretrain_block_forward(net, weights, 'block4', reuse, scope)
+        net = self.pretrain_block_forward(inp, weights, 'block1', is_training, reuse, scope)
+        net = self.pretrain_block_forward(net, weights, 'block2', is_training, reuse, scope)
+        net = self.pretrain_block_forward(net, weights, 'block3', is_training, reuse, scope)
+        net = self.pretrain_block_forward(net, weights, 'block4', is_training, reuse, scope)
         net = tf.nn.avg_pool(net, [1,5,5,1], [1,5,5,1], 'VALID')
         net = tf.reshape(net, [-1, np.prod([int(dim) for dim in net.get_shape()[1:]])])
         return net
 
-    def forward_resnet(self, inp, weights, reuse=False, scope=''):
+    def forward(self, inp, weights, step, is_training=False, reuse=False, scope=''):
         """The function to forward the resnet during meta-train phase
         Args:
           inp: input feature maps.
           weights: input resnet weights.
+          step: index for the inner loop, used to decide which bn layer to use
           reuse: reuse the batch norm weights or not.
           scope: the label to indicate which layer we are processing.
         Return:
           The processed feature maps.
-        """  
+        """
         inp = tf.reshape(inp, [-1, self.img_size, self.img_size, self.channels])
-        net = self.block_forward(inp, weights, 'block1', reuse, scope)
-        net = self.block_forward(net, weights, 'block2', reuse, scope)
-        net = self.block_forward(net, weights, 'block3', reuse, scope)
-        net = self.block_forward(net, weights, 'block4', reuse, scope)
+        net = self.block_forward(inp, weights, 'block1', step, is_training, reuse, scope)
+        net = self.block_forward(net, weights, 'block2', step, is_training, reuse, scope)
+        net = self.block_forward(net, weights, 'block3', step, is_training, reuse, scope)
+        net = self.block_forward(net, weights, 'block4', step, is_training, reuse, scope)
         net = tf.nn.avg_pool(net, [1,5,5,1], [1,5,5,1], 'VALID')
         net = tf.reshape(net, [-1, np.prod([int(dim) for dim in net.get_shape()[1:]])])
         return net
@@ -92,7 +94,7 @@ class Models:
         net = tf.matmul(inp, fc_weights['w5']) + fc_weights['b5']
         return net
 
-    def pretrain_block_forward(self, inp, weights, block, reuse, scope):
+    def pretrain_block_forward(self, inp, weights, block, is_training, reuse, scope):
         """The function to forward a resnet block during pre-train phase
         Args:
           inp: input feature maps.
@@ -103,21 +105,22 @@ class Models:
         Return:
           The processed feature maps.
         """  
-        net = resnet_conv_block(inp, weights[block + '_conv1'], weights[block + '_bias1'], reuse, scope+block+'0')
-        net = resnet_conv_block(net, weights[block + '_conv2'], weights[block + '_bias2'], reuse, scope+block+'1')
-        net = resnet_conv_block(net, weights[block + '_conv3'], weights[block + '_bias3'], reuse, scope+block+'2')
+        net = resnet_conv_block(inp, weights[block + '_conv1'], weights[block + '_bias1'], is_training, reuse, scope+block+'0')
+        net = resnet_conv_block(net, weights[block + '_conv2'], weights[block + '_bias2'], is_training, reuse, scope+block+'1')
+        net = resnet_conv_block(net, weights[block + '_conv3'], weights[block + '_bias3'], is_training, reuse, scope+block+'2')
         res = resnet_nob_conv_block(inp, weights[block + '_conv_res'], reuse, scope+block+'res')
         net = net + res
         net = tf.nn.max_pool(net, [1,2,2,1], [1,2,2,1], 'VALID')
         net = tf.nn.dropout(net, keep_prob=FLAGS.pretrain_dropout_keep)
         return net
 
-    def block_forward(self, inp, weights, block, reuse, scope):
+    def block_forward(self, inp, weights, block, step, is_training, reuse, scope):
         """The function to forward a resnet block during meta-train phase
         Args:
           inp: input feature maps.
           weights: input resnet weights.
           block: the string to indicate which block we are processing.
+          step: index for the inner loop, used to decide which bn layer to use
           reuse: reuse the batch norm weights or not.
           scope: the label to indicate which layer we are processing.
         Return:
@@ -125,11 +128,14 @@ class Models:
         """  
 
         net = resnet_conv_block(inp, weights[block + '_conv1'],
-                                weights[block + '_bias1'], reuse, scope + block + '0')
+                                weights[block + '_bias1'], is_training,
+                                reuse, scope + block + '0' + str(step))
         net = resnet_conv_block(net, weights[block + '_conv2'],
-                                weights[block + '_bias2'], reuse, scope + block + '1')
+                                weights[block + '_bias2'], is_training,
+                                reuse, scope + block + '1' + str(step))
         net = resnet_conv_block(net, weights[block + '_conv3'],
-                                weights[block + '_bias3'], reuse, scope + block + '2')
+                                weights[block + '_bias3'], is_training,
+                                reuse, scope + block + '2' + str(step))
 
         res = resnet_nob_conv_block(inp, weights[block + '_conv_res'], reuse, scope+block+'res')
         net = net + res
@@ -153,7 +159,7 @@ class Models:
             fc_weights['b5'] = tf.Variable(tf.zeros([self.dim_output]), name='fc_b5')
         return fc_weights
 
-    def construct_resnet_weights(self):
+    def construct_weights(self):
         """The function to construct resnet weights.
         Return:
           The resnet weights.
@@ -195,9 +201,3 @@ class Models:
         weights[scope + '_conv_res'] = tf.get_variable(scope + '_conv_res', [1, 1, last_dim_hidden, dim_hidden],
             initializer=conv_initializer, dtype=dtype)
         return weights
-
-    def construct_resnet_bn_weights(self):
-        pass
-
-    def construct_resnet_bn_stats(self):
-        pass

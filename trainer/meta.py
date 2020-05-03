@@ -30,30 +30,30 @@ FLAGS = flags.FLAGS
 
 class MetaTrainer:
     """The class that contains the code for the meta-train and meta-test."""
-    def __init__(self, exp_string, logdir, pre_string):
+    def __init__(self, exp_string, logdir, pre_string, pretrain_dir):
         # Remove the saved datalist for a new experiment
         os.system('rm -r ./logs/processed_data/*')
         self.exp_string = exp_string
         self.logdir = logdir
         self.pre_string = pre_string
+        self.pretrain_dir = pretrain_dir
         data_generator = MetaDataGenerator()
         if FLAGS.metatrain:
             # Build model for meta-train phase
             print('Building meta-train model')
             self.model = MakeMetaModel()
             self.model.construct_model()
+
             print('Meta-train model is built')
-            # Start tensorflow session          
+
+            # Start tensorflow session
             self.start_session()
             # Generate data for meta-train phase
-            if FLAGS.load_saved_weights:
-                random.seed(5) 
+            random.seed(5)
             data_generator.generate_data(data_type='train')
-            if FLAGS.load_saved_weights:
-                random.seed(7)
+            random.seed(7)
             data_generator.generate_data(data_type='test')
-            if FLAGS.load_saved_weights:
-                random.seed(9)
+            random.seed(9)
             data_generator.generate_data(data_type='val')
         else:
             # Build model for meta-test phase
@@ -65,25 +65,25 @@ class MetaTrainer:
             # Start tensorflow session
             self.start_session()
             # Generate data for meta-test phase
-            if FLAGS.load_saved_weights:
-                random.seed(7)
+            random.seed(7)
             data_generator.generate_data(data_type='test')
-        # Load the experiment setting string from FLAGS
-        # TODO exp_string = FLAGS.exp_string
 
         # Global initialization and starting queue
         tf.global_variables_initializer().run()
         tf.train.start_queue_runners()
 
         if FLAGS.metatrain:
-
-            if FLAGS.resume_iter >= 0:
+            if FLAGS.from_scratch:
+                print("No pretrain weights are loaded.")
+            elif FLAGS.resume_iter > 0:
                 # Load the saved weights of meta-train
                 weights = np.load(self.logdir + '/' + exp_string + '/weights_' + str(FLAGS.resume_iter) + '.npy',
                                   allow_pickle=True, encoding="latin1").tolist()
                 fc_weights = np.load(self.logdir + '/' + exp_string + '/fc_weights_' + str(FLAGS.resume_iter) + '.npy',
                                      allow_pickle=True, encoding="latin1").tolist()
                 inner_lrs = np.load(self.logdir + '/' + exp_string + '/inner_lrs_' + str(FLAGS.resume_iter) + '.npy',
+                                    allow_pickle=True, encoding="latin1").tolist()
+                bn_vars = np.load(self.logdir + '/' + exp_string + '/bn_vars_' + str(FLAGS.resume_iter) + '.npy',
                                     allow_pickle=True, encoding="latin1").tolist()
 
                 # Assign the weights to the tensorflow variables
@@ -93,6 +93,8 @@ class MetaTrainer:
                     self.sess.run(tf.assign(self.model.fc_weights[key], fc_weights[key]))
                 for idx in range(len(inner_lrs)):
                     self.sess.run(tf.assign(self.model.inner_lrs[idx], inner_lrs[idx]))
+                for key in bn_vars:
+                    self.sess.run(tf.assign(self.model.bn_vars[key], bn_vars[key]))
 
                 print("Resuming meta-training from iteration", FLAGS.resume_iter)
 
@@ -106,54 +108,60 @@ class MetaTrainer:
                 if not os.path.exists(this_init_dir):
                     # If there is no saved initialization weights for meta-train, load pre-train model and save initialization weights
                     os.mkdir(this_init_dir)
-                    if FLAGS.load_saved_weights:
-                        print('Loading downloaded pretrain weights')
-                        weights = np.load('logs/download_weights/weights.npy', allow_pickle=True, encoding="latin1").tolist()
-                    else:
-                        print('Loading pretrain weights')
-                        weights_save_dir_base = FLAGS.pretrain_dir
-                        weights_save_dir = os.path.join(weights_save_dir_base, pre_save_str)
-                        weights = np.load(os.path.join(weights_save_dir, "weights_{}.npy".format(FLAGS.pretrain_iterations)), \
-                            allow_pickle=True, encoding="latin1").tolist()
+                    print('Loading pretrain weights')
+                    weights_save_dir_base = self.pretrain_dir
+                    weights_save_dir = os.path.join(weights_save_dir_base, pre_save_str)
+                    weights = np.load(os.path.join(weights_save_dir, "weights_{}.npy".format(FLAGS.pretrain_iterations)),
+                        allow_pickle=True, encoding="latin1").tolist()
+                    bn_vars = np.load(
+                        os.path.join(weights_save_dir, "bn_vars_{}.npy".format(FLAGS.pretrain_iterations)),
+                        allow_pickle=True, encoding="latin1").tolist()
+
                     # Assign pretrained weights to tensorflow variables
                     for key in weights.keys():
                         if key != 'b5' and key != 'w5':
                             self.sess.run(tf.assign(self.model.weights[key], weights[key]))
+                    for key in bn_vars.keys():
+                        for step in range(FLAGS.train_base_epoch_num):
+                            self.sess.run(tf.assign(self.model.bn_vars[key + str(step)], bn_vars[key]))
                     print('Pretrain weights loaded, saving init weights')
                     # Load and save init weights for the model
                     new_weights = self.sess.run(self.model.weights)
-                    fc_weights = self.sess.run(self.model.fc_weights)
+                    new_bn_vars = self.sess.run(self.model.bn_vars)
+                    #fc_weights = self.sess.run(self.model.fc_weights)
                     np.save(this_init_dir + 'weights_init.npy', new_weights)
-                    np.save(this_init_dir + 'fc_weights_init.npy', fc_weights)
+                    np.save(this_init_dir + 'bn_vars_init.npy', new_bn_vars)
+                    #np.save(this_init_dir + 'fc_weights_init.npy', fc_weights)
                 else:
                     # If the initialization weights are already generated, load the previous saved ones
-                    # This process is deactivate in the default settings, you may activate this for ablative study
                     print('Loading previous saved init weights')
                     weights = np.load(this_init_dir + 'weights_init.npy', allow_pickle=True, encoding="latin1").tolist()
-                    fc_weights = np.load(this_init_dir + 'fc_weights_init.npy', allow_pickle=True, encoding="latin1").tolist()
+                    bn_vars = np.load(this_init_dir + 'bn_vars_init.npy', allow_pickle=True, encoding="latin1").tolist()
+                    #fc_weights = np.load(this_init_dir + 'fc_weights_init.npy', allow_pickle=True, encoding="latin1").tolist()
                     for key in weights.keys():
                         if key != 'b5' or key != 'w5':
                             self.sess.run(tf.assign(self.model.weights[key], weights[key]))
-                    for key in fc_weights.keys():
-                        self.sess.run(tf.assign(self.model.fc_weights[key], fc_weights[key]))
+                    #for key in fc_weights.keys():
+                    #    self.sess.run(tf.assign(self.model.fc_weights[key], fc_weights[key]))
+                    for key in bn_vars.keys():
+                        self.sess.run(tf.assign(self.model.bn_vars[key], bn_vars[key]))
                     print('Init weights loaded')
         else:
-            # Load the saved meta model for meta-test phase
-            if FLAGS.load_saved_weights:
-                # Load the downloaded weights
-                weights = np.load('./logs/download_weights/weights.npy', allow_pickle=True, encoding="latin1").tolist()
-                fc_weights = np.load('./logs/download_weights/fc_weights.npy', allow_pickle=True, encoding="latin1").tolist()
-            else:
-                # Load the saved weights of meta-train
-                weights = np.load(self.logdir + '/' + exp_string +  '/weights_' + str(FLAGS.test_iter) + '.npy',
-                    allow_pickle=True, encoding="latin1").tolist()
-                fc_weights = np.load(self.logdir + '/' + exp_string +  '/fc_weights_' + str(FLAGS.test_iter) + '.npy',
-                    allow_pickle=True, encoding="latin1").tolist()
-                inner_lrs = np.load(self.logdir + '/' + exp_string + '/inner_lrs_' + str(FLAGS.test_iter) + '.npy',
-                                    allow_pickle=True, encoding="latin1").tolist()
-                # Assign the inner learning rates to the tensorflow variables
-                for idx in range(len(inner_lrs)):
-                    self.sess.run(tf.assign(self.model.inner_lrs[idx], inner_lrs[idx]))
+            # Load the saved weights of meta-train
+            weights = np.load(self.logdir + '/' + exp_string +  '/weights_' + str(FLAGS.test_iter) + '.npy',
+                allow_pickle=True, encoding="latin1").tolist()
+            fc_weights = np.load(self.logdir + '/' + exp_string +  '/fc_weights_' + str(FLAGS.test_iter) + '.npy',
+                allow_pickle=True, encoding="latin1").tolist()
+            inner_lrs = np.load(self.logdir + '/' + exp_string + '/inner_lrs_' + str(FLAGS.test_iter) + '.npy',
+                                allow_pickle=True, encoding="latin1").tolist()
+            bn_vars = np.load(self.logdir + '/' + exp_string + '/bn_vars_' + str(FLAGS.test_iter) + '.npy',
+                                allow_pickle=True, encoding="latin1").tolist()
+            # Assign the inner learning rates to the tensorflow variables
+            for idx in range(len(inner_lrs)):
+                self.sess.run(tf.assign(self.model.inner_lrs[idx], inner_lrs[idx]))
+            for key in bn_vars:
+                self.sess.run(tf.assign(self.model.bn_vars[key], bn_vars[key]))
+
 
             # Assign the weights to the tensorflow variables
             for key in weights.keys():
@@ -164,10 +172,7 @@ class MetaTrainer:
 
 
             print('Weights loaded')
-            if FLAGS.load_saved_weights:
-                print('Meta test using downloaded model')
-            else:
-                print('Test iter: ' + str(FLAGS.test_iter))
+            print('Test iter: ' + str(FLAGS.test_iter))
 
         if FLAGS.metatrain:
             self.train(data_generator)
@@ -205,6 +210,7 @@ class MetaTrainer:
         data_generator.load_data(data_type='train')
         data_generator.load_data(data_type='val')
 
+
         for train_idx in trange(FLAGS.metatrain_iterations):
             # Load the episodes for this meta batch
             inputa = []
@@ -223,8 +229,9 @@ class MetaTrainer:
             labelb = np.array(labelb)
 
             # Generate feed dict for the tensorflow graph
-            feed_dict = {self.model.inputa: inputa, self.model.inputb: inputb, \
-                self.model.labela: labela, self.model.labelb: labelb, self.model.meta_lr: train_lr}
+            feed_dict = {self.model.inputa: inputa, self.model.inputb: inputb,
+                self.model.labela: labela, self.model.labelb: labelb, self.model.meta_lr: train_lr,
+                self.model.is_training: True}
 
             # Set the variables to load from the tensorflow graph
             input_tensors = [self.model.metatrain_op] # The meta train optimizer
@@ -248,13 +255,15 @@ class MetaTrainer:
                 loss_list, acc_list = [], []
 
             # Save the model during meta-train
-            if train_idx % FLAGS.meta_save_step == 0:
+            if train_idx != 0 and train_idx % FLAGS.meta_save_step == 0:
                 weights = self.sess.run(self.model.weights)
                 fc_weights = self.sess.run(self.model.fc_weights)
                 inner_lrs = self.sess.run(self.model.inner_lrs)
-                np.save(self.logdir + '/' + exp_string +  '/weights_' + str(train_idx) + '.npy', weights)
-                np.save(self.logdir + '/' + exp_string +  '/fc_weights_' + str(train_idx) + '.npy', fc_weights)
-                np.save(self.logdir + '/' + exp_string +  '/inner_lrs_' + str(train_idx) + '.npy', inner_lrs)
+                bn_vars = self.sess.run(self.model.bn_vars)
+                np.save(self.logdir + '/' + exp_string + '/weights_'    + str(train_idx + FLAGS.resume_iter) + '.npy', weights)
+                np.save(self.logdir + '/' + exp_string + '/fc_weights_' + str(train_idx + FLAGS.resume_iter) + '.npy', fc_weights)
+                np.save(self.logdir + '/' + exp_string + '/inner_lrs_'  + str(train_idx + FLAGS.resume_iter) + '.npy', inner_lrs)
+                np.save(self.logdir + '/' + exp_string + '/bn_vars_'    + str(train_idx + FLAGS.resume_iter) + '.npy', bn_vars)
 
             # Run the meta-validation during meta-train
             if train_idx % FLAGS.meta_val_print_step == 0:
@@ -268,18 +277,22 @@ class MetaTrainer:
                     test_inputb = this_episode[2][np.newaxis, :]
                     test_labelb = this_episode[3][np.newaxis, :]
 
-                    test_feed_dict = {self.model.inputa: test_inputa, self.model.inputb: test_inputb, \
-                        self.model.labela: test_labela, self.model.labelb: test_labelb, \
-                        self.model.meta_lr: 0.0}
+                    test_feed_dict = {self.model.inputa: test_inputa, self.model.inputb: test_inputb,
+                        self.model.labela: test_labela, self.model.labelb: test_labelb,
+                        self.model.meta_lr: 0.0, self.model.is_training: False}
                     test_input_tensors = [self.model.total_loss, self.model.total_accuracy, self.model.softmax_probs]
                     test_result = self.sess.run(test_input_tensors, test_feed_dict)
                     test_loss.append(test_result[0])
                     test_accs.append(test_result[1])
-                    test_aucs.append(roc_auc_score(test_labelb[0], test_result[2][0]))
+
+                    try:
+                        test_aucs.append(roc_auc_score(test_labelb[0], test_result[2][0]))
+                    except ValueError:
+                        pass
 
 
                 valsum_feed_dict = {self.model.input_val_loss: \
-                    np.mean(test_loss)*np.float(FLAGS.meta_batch_size)/np.float(FLAGS.shot_num), \
+                    np.mean(test_loss)*np.float(FLAGS.meta_batch_size)/np.float(FLAGS.shot_num),
                     self.model.input_val_acc: np.mean(test_accs)*np.float(FLAGS.meta_batch_size)}
                 valsum = self.sess.run(self.model.val_summ_op, valsum_feed_dict)
                 train_writer.add_summary(valsum, train_idx)
@@ -291,8 +304,6 @@ class MetaTrainer:
             # Reduce the meta learning rate to half after several iterations
             if (train_idx!=0) and train_idx % FLAGS.lr_drop_step == 0 and train_lr > FLAGS.min_meta_lr:
                 train_lr = train_lr * FLAGS.lr_drop_rate
-                if train_lr < 0.1 * FLAGS.meta_lr:
-                    train_lr = 0.1 * FLAGS.meta_lr
                 if train_lr < FLAGS.min_meta_lr:
                     train_lr = FLAGS.min_meta_lr
                 print('Train LR: {}'.format(train_lr))
@@ -301,9 +312,11 @@ class MetaTrainer:
         weights = self.sess.run(self.model.weights)
         fc_weights = self.sess.run(self.model.fc_weights)
         inner_lrs = self.sess.run(self.model.inner_lrs)
-        np.save(self.logdir + '/' + exp_string +  '/weights_' + str(train_idx+1) + '.npy', weights)
-        np.save(self.logdir + '/' + exp_string +  '/fc_weights_' + str(train_idx+1) + '.npy', fc_weights)
-        np.save(self.logdir + '/' + exp_string + '/inner_lrs_' + str(train_idx+1) + '.npy', inner_lrs)
+        bn_vars = self.sess.run(self.model.bn_vars)
+        np.save(self.logdir + '/' + exp_string + '/weights_'    + str(train_idx+1 + FLAGS.resume_iter) + '.npy', weights)
+        np.save(self.logdir + '/' + exp_string + '/fc_weights_' + str(train_idx+1 + FLAGS.resume_iter) + '.npy', fc_weights)
+        np.save(self.logdir + '/' + exp_string + '/inner_lrs_'  + str(train_idx+1 + FLAGS.resume_iter) + '.npy', inner_lrs)
+        np.save(self.logdir + '/' + exp_string + '/bn_vars_'    + str(train_idx+1 + FLAGS.resume_iter) + '.npy', bn_vars)
 
     def test(self, data_generator):
         """The function for the meta-test phase
@@ -328,7 +341,7 @@ class MetaTrainer:
             labela = this_episode[1][np.newaxis, :]
             inputb = this_episode[2][np.newaxis, :]
             labelb = this_episode[3][np.newaxis, :]
-            feed_dict = {self.model.inputa: inputa, self.model.inputb: inputb, \
+            feed_dict = {self.model.inputa: inputa, self.model.inputb: inputb,
                 self.model.labela: labela, self.model.labelb: labelb, self.model.meta_lr: 0.0}
             result = self.sess.run([self.model.metaval_total_accuracies, self.model.metaval_softmax_probs],
                                    feed_dict)
@@ -352,6 +365,7 @@ class MetaTrainer:
         print('Test accuracies and confidence intervals')
         print((means, ci95))
 
+        '''
         # Save the meta-test results in the csv files
         if not FLAGS.load_saved_weights:
             out_filename = self.logdir +'/'+ exp_string + '/' + 'result_' + str(FLAGS.shot_num) + 'shot_' + str(FLAGS.test_iter) + '.csv'
@@ -364,3 +378,5 @@ class MetaTrainer:
                 writer.writerow(means)
                 writer.writerow(stds)
                 writer.writerow(ci95)
+        '''
+

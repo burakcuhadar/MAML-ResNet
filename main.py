@@ -10,6 +10,7 @@
 
 import os
 import numpy as np
+import tensorflow as tf
 from tensorflow.python.platform import flags
 from trainer.meta import MetaTrainer
 from trainer.pre import PreTrainer
@@ -26,7 +27,7 @@ flags.DEFINE_string('phase', 'meta', 'pre or meta')
 flags.DEFINE_string('exp_log_label', 'experiment_results', 'directory for summaries and checkpoints')
 flags.DEFINE_string('logdir_base', './logs/', 'directory for logs')
 flags.DEFINE_bool('full_gpu_memory_mode', False, 'in this mode, the code occupies GPU memory in advance')
-flags.DEFINE_string('backbone_arch', 'resnet12', 'network backbone')
+flags.DEFINE_string('backbone_arch', 'conv4', 'network backbone')
 
 ### Pre-train phase options
 flags.DEFINE_integer('pre_lr_dropstep', 5000, 'the step number to drop pre_lr')
@@ -59,7 +60,7 @@ flags.DEFINE_integer('train_base_epoch_num', 20, 'number of inner gradient updat
 flags.DEFINE_integer('test_base_epoch_num', 100, 'number of inner gradient updates during test.')
 flags.DEFINE_integer('lr_drop_step', 5000, 'the step number to drop meta_lr')
 flags.DEFINE_integer('test_iter', 1000, 'iteration to load model')
-flags.DEFINE_integer('resume_iter', -1, 'iteration to resume meta-training')
+flags.DEFINE_integer('resume_iter', 0, 'iteration to resume meta-training')
 flags.DEFINE_float('meta_lr', 0.001, 'the meta learning rate of the generator')
 flags.DEFINE_float('lr_drop_rate', 0.5, 'the step number to drop meta_lr')
 flags.DEFINE_float('min_meta_lr', 0.0001, 'the min meta learning rate of the generator')
@@ -72,7 +73,7 @@ flags.DEFINE_string('norm', 'batch_norm', 'batch_norm, layer_norm, or None')
 flags.DEFINE_bool('metatrain', True, 'is this the meta-train phase')
 flags.DEFINE_bool('base_augmentation', True, 'whether do data augmentation during base learning')
 flags.DEFINE_bool('redo_init', True, 're-build the initialization weights')
-flags.DEFINE_bool('load_saved_weights', False, 'load the downloaded weights')
+flags.DEFINE_bool('from_scratch', False, 'start meta-train from scratch, do not use pre-train weights')
 
 # Generate experiment key words string
 exp_string = 'arch(' + FLAGS.backbone_arch + ')'
@@ -98,7 +99,6 @@ elif FLAGS.norm == 'None':
 else:
     raise Exception('Norm setting is not recognized')
 
-# TODO FLAGS.exp_string = exp_string
 print('Parameters: ' + exp_string)
 
 # Generate pre-train key words string
@@ -135,22 +135,7 @@ if FLAGS.redo_init:
         print('No init weights')
 
 def main():
-    data_generator = MetaDataGenerator()
-    data_generator.generate_data(data_type='val')
-    data_generator.load_data(data_type='val')
-    #data_generator.generate_data(data_type='test')
-    this_episode = data_generator.load_episode(index=1, data_type='val')
-    test_inputa = this_episode[0][np.newaxis, :]
-    test_labela = this_episode[1][np.newaxis, :]
-    test_inputb = this_episode[2][np.newaxis, :]
-    test_labelb = this_episode[3][np.newaxis, :]
-
-    print(test_inputa.shape)
-    print(test_labela.shape)
-    print(test_inputb.shape)
-    print(test_labelb.shape)
-
-    '''
+    tf.logging.set_verbosity(tf.compat.v1.logging.ERROR)
     # Set GPU device id
     print('Using GPU ' + str(FLAGS.device_id))
     os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.device_id)
@@ -159,10 +144,10 @@ def main():
     if FLAGS.phase=='pre':
         trainer = PreTrainer(pre_string, pretrain_dir)
     elif FLAGS.phase=='meta':
-        trainer = MetaTrainer(exp_string, logdir, pre_string)
+        trainer = MetaTrainer(exp_string, logdir, pre_string, pretrain_dir)
     else:
         raise Exception('Please set correct phase')           
-    '''
+
 
 if __name__ == "__main__":
     main()

@@ -214,18 +214,20 @@ def leaky_relu(x, leak=0.1):
     """
     return tf.maximum(x, leak*x)
 
-def resnet_conv_block(inp, cweight, bweight, reuse, scope, activation=leaky_relu):
+def resnet_conv_block(inp, cweight, bweight, is_training, reuse, scope, activation=leaky_relu):
     """The function to forward a conv layer.
     Args:
       inp: the input feature maps.
       cweight: the filters' weights for this conv layer.
       bweight: the biases' weights for this conv layer.
+      is_training: whether to use batch stats or running stats in batch norm layer
       reuse: whether reuse the variables for the batch norm.
       scope: the label for this conv layer.
       activation: the activation function for this conv layer.
     Return:
       The processed feature maps.
     """
+    #if not reuse: print(scope)
     stride, no_stride = [1,2,2,1], [1,1,1,1]
 
     if FLAGS.activation == 'leaky_relu':
@@ -236,9 +238,20 @@ def resnet_conv_block(inp, cweight, bweight, reuse, scope, activation=leaky_relu
         activation = None
 
     conv_output = tf.nn.conv2d(inp, cweight, no_stride, 'SAME') + bweight
-    normed = normalize(conv_output, activation, reuse, scope)
+    normed = normalize(conv_output, activation, is_training, reuse, scope)
 
     return normed
+
+def conv_block(inp, cweight, bweight, is_training, reuse, scope, activation=tf.nn.relu):
+    """ Perform, conv, batch norm, nonlinearity, and max pool """
+    stride, no_stride = [1,2,2,1], [1,1,1,1]
+
+    conv_output = tf.nn.conv2d(inp, cweight, no_stride, 'SAME') + bweight
+    normed = normalize(conv_output, activation, is_training, reuse, scope)
+    normed = tf.nn.max_pool(normed, stride, stride, 'VALID')
+
+    return normed
+
 
 def resnet_nob_conv_block(inp, cweight, reuse, scope):
     """The function to forward a conv layer without biases, normalization and non-liner layer.
@@ -254,7 +267,7 @@ def resnet_nob_conv_block(inp, cweight, reuse, scope):
     conv_output = tf.nn.conv2d(inp, cweight, no_stride, 'SAME')
     return conv_output
 
-def normalize(inp, activation, reuse, scope):
+def normalize(inp, activation, is_training, reuse, scope):
     """The function to forward the normalization.
     Args:
       inp: the input feature maps.
@@ -265,7 +278,24 @@ def normalize(inp, activation, reuse, scope):
       The processed feature maps.
     """
     if FLAGS.norm == 'batch_norm':
-        return tf_layers.batch_norm(inp, decay=0.99, activation_fn=activation, reuse=reuse, scope=scope)
+        bn_train = tf_layers.batch_norm(inp,
+                                        decay=0.9,
+                                        scale=True,
+                                        activation_fn=activation,
+                                        updates_collections=None,
+                                        is_training=True,
+                                        reuse=reuse,
+                                        scope=scope)
+        bn_inference = tf_layers.batch_norm(inp,
+                                            decay=0.9,
+                                            scale=True,
+                                            activation_fn=activation,
+                                            updates_collections=None,
+                                            is_training=False,
+                                            reuse=True,
+                                            scope=scope)
+        z = tf.cond(is_training, lambda: bn_train, lambda: bn_inference)
+        return z
     elif FLAGS.norm == 'layer_norm':
         return tf_layers.layer_norm(inp, activation_fn=activation, reuse=reuse, scope=scope)
     elif FLAGS.norm == 'None':
@@ -309,3 +339,13 @@ def xent(pred, label):
     Note: with tf version <=0.12, this loss has incorrect 2nd derivatives
     """
     return tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=label) / FLAGS.shot_num
+
+def get_bn_vars(scope):
+    global_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
+    return {var.name: var for var in global_vars if any(var_name in var.name for var_name in \
+                    ['gamma', 'beta', 'moving_mean', 'moving_variance'])}
+
+def get_trainable_bn_vars(scope):
+    global_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
+    return [var for var in global_vars if any(var_name in var.name for var_name in \
+                                              ['gamma', 'beta'])]
