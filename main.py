@@ -61,6 +61,7 @@ flags.DEFINE_integer('test_base_epoch_num', 100, 'number of inner gradient updat
 flags.DEFINE_integer('lr_drop_step', 5000, 'the step number to drop meta_lr')
 flags.DEFINE_integer('test_iter', 1000, 'iteration to load model')
 flags.DEFINE_integer('resume_iter', 0, 'iteration to resume meta-training')
+flags.DEFINE_float('resume_lr', 0.001, 'meta-lr to use when training is resumed')
 flags.DEFINE_float('meta_lr', 0.001, 'the meta learning rate of the generator')
 flags.DEFINE_float('lr_drop_rate', 0.5, 'the step number to drop meta_lr')
 flags.DEFINE_float('min_meta_lr', 0.0001, 'the min meta learning rate of the generator')

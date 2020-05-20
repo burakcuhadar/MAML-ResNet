@@ -206,6 +206,9 @@ class MetaTrainer:
         loss_list, acc_list = [], []
         # Load the meta learning rate from FLAGS
         train_lr = FLAGS.meta_lr
+        if FLAGS.resume_iter > 0:
+            train_lr = FLAGS.resume_lr
+
         # Load data for meta-train and meta validation
         data_generator.load_data(data_type='train')
         data_generator.load_data(data_type='val')
@@ -230,8 +233,7 @@ class MetaTrainer:
 
             # Generate feed dict for the tensorflow graph
             feed_dict = {self.model.inputa: inputa, self.model.inputb: inputb,
-                self.model.labela: labela, self.model.labelb: labelb, self.model.meta_lr: train_lr,
-                self.model.is_training: True}
+                self.model.labela: labela, self.model.labelb: labelb, self.model.meta_lr: train_lr}
 
             # Set the variables to load from the tensorflow graph
             input_tensors = [self.model.metatrain_op] # The meta train optimizer
@@ -266,7 +268,7 @@ class MetaTrainer:
                 np.save(self.logdir + '/' + exp_string + '/bn_vars_'    + str(train_idx + FLAGS.resume_iter) + '.npy', bn_vars)
 
             # Run the meta-validation during meta-train
-            if train_idx % FLAGS.meta_val_print_step == 0:
+            if train_idx != 0 and train_idx % FLAGS.meta_val_print_step == 0:
                 test_loss = []
                 test_accs = []
                 test_aucs = []
@@ -279,7 +281,7 @@ class MetaTrainer:
 
                     test_feed_dict = {self.model.inputa: test_inputa, self.model.inputb: test_inputb,
                         self.model.labela: test_labela, self.model.labelb: test_labelb,
-                        self.model.meta_lr: 0.0, self.model.is_training: False}
+                        self.model.meta_lr: 0.0}
                     test_input_tensors = [self.model.total_loss, self.model.total_accuracy, self.model.softmax_probs]
                     test_result = self.sess.run(test_input_tensors, test_feed_dict)
                     test_loss.append(test_result[0])
@@ -343,16 +345,20 @@ class MetaTrainer:
             labelb = this_episode[3][np.newaxis, :]
             feed_dict = {self.model.inputa: inputa, self.model.inputb: inputb,
                 self.model.labela: labela, self.model.labelb: labelb, self.model.meta_lr: 0.0}
-            result = self.sess.run([self.model.metaval_total_accuracies, self.model.metaval_softmax_probs],
+            result = self.sess.run([self.model.metaval_total_accuracy, self.model.metaval_softmax_probs],
                                    feed_dict)
             metaval_accuracies.append(result[0])
             metaval_aucs.append(roc_auc_score(labelb[0], result[1][0]))
 
         # Calculate the mean accuracies and the confidence intervals
-        metaval_accuracies = np.array(metaval_accuracies)
-        means = np.mean(metaval_accuracies, 0)
-        stds = np.std(metaval_accuracies, 0)
+        #metaval_accuracies = np.array(metaval_accuracies)
+        means = np.mean(metaval_accuracies)
+        stds = np.std(metaval_accuracies)
         ci95 = 1.96*stds/np.sqrt(NUM_TEST_POINTS)
+
+        # Print the meta-test results
+        print('Test accuracies and confidence intervals')
+        print((means, ci95))
 
         # Calculate the mean auc score and the confidence interval
         auc_mean = np.mean(metaval_aucs)
@@ -361,9 +367,6 @@ class MetaTrainer:
         print('Test AUC')
         print(auc_mean, " +- ", ci95)
 
-        # Print the meta-test results
-        print('Test accuracies and confidence intervals')
-        print((means, ci95))
 
         '''
         # Save the meta-test results in the csv files

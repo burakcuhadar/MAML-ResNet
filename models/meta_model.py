@@ -31,6 +31,11 @@ def MakeMetaModel():
             from conv4 import Models
         except ImportError:#python3
             from models.conv4 import Models
+    elif FLAGS.backbone_arch == 'conv6':
+        try:  # python2
+            from conv6 import Models
+        except ImportError:  # python3
+            from models.conv6 import Models
     else:
         print('Please set the correct backbone')
 
@@ -44,15 +49,16 @@ def MakeMetaModel():
             self.labela = tf.placeholder(tf.float32) # episode train labels
             self.labelb = tf.placeholder(tf.float32) # episode test labels
 
-            # Placeholder to decide between train or validation phase
-            self.is_training = tf.placeholder(tf.bool, name="is_training")
-
             with tf.variable_scope('meta-model', reuse=None) as training_scope:
                 # construct the model weights
                 self.weights = weights = self.construct_weights()
                 # we do not need the fc weights of the pretrain model
-                self.weights.pop('w5', None)
-                self.weights.pop('b5', None)
+                if FLAGS.backbone_arch=='conv4':
+                    self.weights.pop('w5', None)
+                    self.weights.pop('b5', None)
+                if FLAGS.backbone_arch == 'conv6':
+                    self.weights.pop('w7', None)
+                    self.weights.pop('b7', None)
                 self.fc_weights = fc_weights = self.construct_fc_weights()
 
                 # Load base epoch number from FLAGS
@@ -70,66 +76,33 @@ def MakeMetaModel():
                       A series of outputs like losses and accuracies.
                     """
 
-                    # Seperate inp to different variables
-                    inputa, inputb, labela, labelb = inp
-                    # Generate empty list to record losses
-                    lossa_list = [] # Base train loss list
-                    lossb_list = [] # Base test loss list
-
-                    # Run the first epoch of the base learning
-                    # Embed episode train
-                    emb_outputa = self.forward(inputa, weights, step=0, is_training=self.is_training, reuse=reuse)
-                    # Forward fc layer for episode train
-                    outputa = self.forward_fc(emb_outputa, fc_weights)
-                    # Calculate base train loss
-                    lossa = self.loss_func(outputa, labela)
-                    # Record base train loss
-                    lossa_list.append(lossa)
-                    # Embed episode test
-                    emb_outputb = self.forward(inputb, weights, step=0, is_training=self.is_training, reuse=True)
-                    # Forward fc layer for episode test
-                    outputb = self.forward_fc(emb_outputb, fc_weights)
-                    # Calculate base test loss
-                    lossb = self.loss_func(outputb, labelb)
-                    # Record base test loss
-                    lossb_list.append(lossb)
-                    # Calculate the gradients for the fc layer and conv weights
-                    grads = tf.gradients(lossa, list(fc_weights.values()) + list(weights.values()))
-                    gradients = dict(zip(list(fc_weights.keys()) + list(weights.keys()), grads))
-                    # Use gradient descent to update the fc layer and conv layers
-                    fast_fc_weights = dict(zip(fc_weights.keys(), [fc_weights[key] - \
-                        inner_lrs[self.get_lr_idx(0,key)] * gradients[key] for key in fc_weights.keys()]))
-                    fast_weights = dict(zip(weights.keys(), [weights[key] - \
-                        inner_lrs[self.get_lr_idx(0,key)] * gradients[key] for key in weights.keys()]))
+                    fast_weights, fast_fc_weights = self.apply_inner_loop_update(inp,
+                                                                                 weights,
+                                                                                 fc_weights,
+                                                                                 0,
+                                                                                 reuse)
 
                     for j in range(1, num_updates):
-                        # Run the following base epochs, these are similar to the first base epoch
-                        emb_outputa = self.forward(inputa, fast_weights, step=j, is_training=self.is_training, reuse=reuse)
-                        lossa = self.loss_func(self.forward_fc(emb_outputa, fast_fc_weights), labela)
-                        lossa_list.append(lossa)
-                        emb_outputb = self.forward(inputb, fast_weights, step=j, is_training=self.is_training, reuse=True)
-                        lossb = self.loss_func(self.forward_fc(emb_outputb, fast_fc_weights), labelb)
-                        lossb_list.append(lossb)
-                        grads = tf.gradients(lossa, list(fast_fc_weights.values()) + list(fast_weights.values()))
-                        gradients = dict(zip(list(fast_fc_weights.keys()) + list(fast_weights.keys()), grads))
-                        fast_fc_weights = dict(zip(fast_fc_weights.keys(), [fast_fc_weights[key] - \
-                            inner_lrs[self.get_lr_idx(j,key)] * gradients[key] for key in fast_fc_weights.keys()]))
-                        fast_weights = dict(zip(fast_weights.keys(), [fast_weights[key] - \
-                            inner_lrs[self.get_lr_idx(j,key)] * gradients[key] for key in fast_weights.keys()]))
+                        fast_weights, fast_fc_weights = self.apply_inner_loop_update(inp,
+                                                                                     fast_weights,
+                                                                                     fast_fc_weights,
+                                                                                     j,
+                                                                                     reuse)
+
+                    inputa, inputb, labela, labelb = inp
 
                     # Calculate final episode test predictions
-                    emb_outputb = self.forward(inputb, fast_weights, step=num_updates-1,
-                                                      is_training=tf.constant(False), reuse=True)
+                    emb_outputb = self.forward(inputb, fast_weights, step=num_updates, reuse=reuse)
                     outputb = self.forward_fc(emb_outputb, fast_fc_weights)
                     # Calculate the final episode test loss, it is the loss for the episode on meta-train 
                     final_lossb = self.loss_func(outputb, labelb)
                     # Used for calculating accuracy and AUC score
-                    softmax_probs = tf.nn.softmax(outputb)
+                    probs = tf.nn.softmax(outputb)
                     # Calculate the final episode test accuracy
-                    accb = tf.contrib.metrics.accuracy(tf.argmax(softmax_probs, 1), tf.argmax(labelb, 1))
+                    accb = tf.contrib.metrics.accuracy(tf.argmax(probs, 1), tf.argmax(labelb, 1))
 
                     # Reorganize all the outputs to a list
-                    task_output = [final_lossb, lossb_list, lossa_list, accb, softmax_probs]
+                    task_output = [final_lossb, accb, probs]
 
                     return task_output
 
@@ -138,20 +111,18 @@ def MakeMetaModel():
                     unused = task_metalearn((self.inputa[0], self.inputb[0], self.labela[0], self.labelb[0]), False)
 
                 # Set the dtype of the outputs
-                out_dtype = [tf.float32, [tf.float32]*num_updates, [tf.float32]*num_updates, tf.float32, tf.float32]
+                out_dtype = [tf.float32, tf.float32, tf.float32]
 
-                # Run two episodes for a meta batch using parallel setting
+                # Run episodes for a meta batch using parallel setting
                 result = tf.map_fn(task_metalearn, elems=(self.inputa, self.inputb, self.labela, self.labelb),
                     dtype=out_dtype, parallel_iterations=FLAGS.meta_batch_size)
                 # Separate the outputs to different variables
-                lossb, lossesb, lossesa, accsb, softmax_probs = result
+                lossb, accsb, softmax_probs = result
 
             print("Constructing output variables")
             # Set the variables to output from the tensorflow graph
             self.total_loss = total_loss = tf.reduce_sum(lossb) / tf.to_float(FLAGS.meta_batch_size)
             self.total_accuracy = total_accuracy = tf.reduce_sum(accsb) / tf.to_float(FLAGS.meta_batch_size)
-            self.total_lossa = total_lossa = [tf.reduce_sum(lossesa[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
-            self.total_lossb = total_lossb = [tf.reduce_sum(lossesb[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
             # Used for computing AUC score
             self.softmax_probs = softmax_probs
 
@@ -164,16 +135,11 @@ def MakeMetaModel():
             grads_and_vars = [(tf.clip_by_value(grad, -10, 10), var) for grad, var in grads_and_vars if grad is not None]
             self.metatrain_op = optimizer.apply_gradients(grads_and_vars)
 
-
             print("Setting the tensorboard")
             # Set the tensorboard
             self.training_summaries = []
             self.training_summaries.append(tf.summary.scalar('Meta Train Loss', (total_loss / tf.to_float(FLAGS.metatrain_epite_sample_num))))
             self.training_summaries.append(tf.summary.scalar('Meta Train Accuracy', total_accuracy))
-            for j in range(num_updates):
-                self.training_summaries.append(tf.summary.scalar('Base Train Loss Step' + str(j+1), total_lossa[j]))
-            for j in range(num_updates):
-                self.training_summaries.append(tf.summary.scalar('Base Val Loss Step' + str(j+1), total_lossb[j]))
 
             self.training_summ_op = tf.summary.merge(self.training_summaries)
 
@@ -198,8 +164,12 @@ def MakeMetaModel():
                 # construct the model weights
                 self.weights = weights = self.construct_weights()
                 # we do not need the fc weights of the pretrain model
-                self.weights.pop('w5', None)
-                self.weights.pop('b5', None)
+                if FLAGS.backbone_arch=='conv4':
+                    self.weights.pop('w5', None)
+                    self.weights.pop('b5', None)
+                if FLAGS.backbone_arch == 'conv6':
+                    self.weights.pop('w7', None)
+                    self.weights.pop('b7', None)
                 self.fc_weights = fc_weights = self.construct_fc_weights()
 
                 # Load test base epoch number from FLAGS
@@ -216,64 +186,51 @@ def MakeMetaModel():
                     Returns:
                       A serious outputs like losses and accuracies.
                     """
-                    # Seperate inp to different variables
-                    inputa, inputb, labela, labelb = inp
-                    # Generate empty list to record accuracies
-                    accb_list = []
 
-                    # Embed the input images to embeddings
-                    emb_outputa = self.forward(inputa, weights, step=0, is_training=tf.constant(False), reuse=reuse)
-                    # This part is similar to the meta-train function, you may refer to the comments above
-                    outputa = self.forward_fc(emb_outputa, fc_weights)
-                    lossa = self.loss_func(outputa, labela)
-                    grads = tf.gradients(lossa, list(fc_weights.values()) + list(weights.values()))
-                    gradients = dict(zip(list(fc_weights.keys()) + list(weights.keys()), grads))
-                    fast_fc_weights = dict(zip(fc_weights.keys(), [fc_weights[key] - \
-                        inner_lrs[self.get_lr_idx(0,key)] * gradients[key] for key in fc_weights.keys()]))
-                    fast_weights = dict(zip(weights.keys(), [weights[key] - \
-                        inner_lrs[self.get_lr_idx(0,key)] * gradients[key] for key in weights.keys()]))
-                    emb_outputb = self.forward(inputb, fast_weights, step=0, is_training=tf.constant(False), reuse=True)
-                    outputb = self.forward_fc(emb_outputb, fast_fc_weights)
-                    accb = tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax(outputb), 1), tf.argmax(labelb, 1))
-                    accb_list.append(accb)
-                    
+                    fast_weights, fast_fc_weights = self.apply_inner_loop_update(inp,
+                                                                                 weights,
+                                                                                 fc_weights,
+                                                                                 0,
+                                                                                 reuse)
+
                     for j in range(1, num_updates):
-                        emb_outputa = self.forward(inputa, fast_weights, step=j, is_training=tf.constant(False), reuse=reuse)
-                        lossa = self.loss_func(self.forward_fc(emb_outputa, fast_fc_weights), labela)
-                        grads = tf.gradients(lossa, list(fast_fc_weights.values()) + list(fast_weights.values()))
-                        gradients = dict(zip(list(fc_weights.keys()) + list(weights.keys()), grads))
-                        fast_fc_weights = dict(zip(fast_fc_weights.keys(), [fast_fc_weights[key] - \
-                            inner_lrs[self.get_lr_idx(j,key)] * gradients[key] for key in fast_fc_weights.keys()]))
-                        fast_weights = dict(zip(fast_weights.keys(), [fast_weights[key] - \
-                            inner_lrs[self.get_lr_idx(j,key)] * gradients[key] for key in fast_weights.keys()]))
-                        emb_outputb = self.forward(inputb, fast_weights, step=j, is_training=tf.constant(False), reuse=True)
-                        outputb = self.forward_fc(emb_outputb, fast_fc_weights)
-                        # Used for calculating accuracy and AUC score
-                        softmax_probs = tf.nn.softmax(outputb)
-                        accb = tf.contrib.metrics.accuracy(tf.argmax(softmax_probs, 1), tf.argmax(labelb, 1))
-                        accb_list.append(accb)
+                        fast_weights, fast_fc_weights = self.apply_inner_loop_update(inp,
+                                                                                     fast_weights,
+                                                                                     fast_fc_weights,
+                                                                                     j,
+                                                                                     reuse)
+
+                    _, inputb, _, labelb = inp
+
+                    emb_outputb = self.forward(inputb,
+                                               fast_weights,
+                                               step=num_updates,
+                                               reuse=reuse)
+                    outputb = self.forward_fc(emb_outputb, fast_fc_weights)
+                    # Used for calculating accuracy and AUC score
+                    probs = tf.nn.softmax(outputb)
+                    accb = tf.contrib.metrics.accuracy(tf.argmax(probs, 1), tf.argmax(labelb, 1))
 
                     lossb = self.loss_func(outputb, labelb)
 
-                    task_output = [lossb, accb, accb_list, softmax_probs]
+                    task_output = [lossb, accb, probs]
 
                     return task_output
 
                 if FLAGS.norm is not None:
                     unused = task_metalearn((self.inputa[0], self.inputb[0], self.labela[0], self.labelb[0]), False)
 
-                out_dtype = [tf.float32, tf.float32, [tf.float32]*num_updates, tf.float32]
+                out_dtype = [tf.float32, tf.float32, tf.float32]
 
-                result = tf.map_fn(task_metalearn, elems=(self.inputa, self.inputb, self.labela, self.labelb), \
+                result = tf.map_fn(task_metalearn, elems=(self.inputa, self.inputb, self.labela, self.labelb),
                     dtype=out_dtype, parallel_iterations=FLAGS.meta_batch_size)
-                lossesb, accsb, accsb_list, softmax_probs = result
+                lossesb, accsb, softmax_probs = result
 
             # Save batch normalization variables
             self.bn_vars = get_bn_vars('meta-test-model')
 
             self.metaval_total_loss = total_loss = tf.reduce_sum(lossesb)
             self.metaval_total_accuracy = total_accuracy = tf.reduce_sum(accsb)
-            self.metaval_total_accuracies = total_accuracies =[tf.reduce_sum(accsb_list[j]) for j in range(num_updates)]
             self.metaval_softmax_probs = softmax_probs
 
         def construct_inner_lrs(self, num_updates):
@@ -294,6 +251,26 @@ def MakeMetaModel():
             sorted_keys = sorted(list(self.weights.keys()) + list(self.fc_weights.keys()))
             return step * (len(self.weights) + len(self.fc_weights)) + sorted_keys.index(key)
 
+        def apply_inner_loop_update(self, inp, weights, fc_weights, step, reuse):
+            inputa, inputb, labela, labelb = inp
 
+            # Forward and compute loss
+            emb_outputa = self.forward(inputa, weights, step=step, reuse=reuse)
+            outputa = self.forward_fc(emb_outputa, fc_weights)
+            lossa = self.loss_func(outputa, labela)
+
+            # Calculate the gradients for the fc layer and conv weights
+            grads = tf.gradients(lossa, list(fc_weights.values()) + list(weights.values()))
+            gradients = dict(zip(list(fc_weights.keys()) + list(weights.keys()), grads))
+            # Use gradient descent to update the fc layer and conv layers
+            fast_fc_weights = dict(zip(fc_weights.keys(), [fc_weights[key] - \
+                                                           self.inner_lrs[self.get_lr_idx(step, key)] * gradients[key]
+                                                           for key in fc_weights.keys()]))
+            fast_weights = dict(zip(weights.keys(), [weights[key] - \
+                                                     self.inner_lrs[self.get_lr_idx(step, key)] * gradients[key]
+                                                     for key in weights.keys()]))
+
+            return fast_weights, fast_fc_weights
 
     return MetaModel()
+

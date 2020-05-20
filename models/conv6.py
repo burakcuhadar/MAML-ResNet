@@ -1,8 +1,8 @@
-""" Conv4 class. """
+""" Conv6 class. """
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.platform import flags
-from utils.misc import softmaxloss, xent, resnet_conv_block, resnet_nob_conv_block, conv_block
+from utils.misc import softmaxloss, xent, conv_block, conv_block_no_pool
 
 FLAGS = flags.FLAGS
 
@@ -48,9 +48,11 @@ class Models:
         hidden2 = conv_block(hidden1, weights['conv2'], weights['b2'], reuse, scope + '1')
         hidden3 = conv_block(hidden2, weights['conv3'], weights['b3'], reuse, scope + '2')
         hidden4 = conv_block(hidden3, weights['conv4'], weights['b4'], reuse, scope + '3')
-        hidden4 = tf.reshape(hidden4, [-1, np.prod([int(dim) for dim in hidden4.get_shape()[1:]])])
+        hidden5 = conv_block_no_pool(hidden4, weights['conv5'], weights['b5'], reuse, scope + '4')
+        hidden6 = conv_block_no_pool(hidden5, weights['conv6'], weights['b6'], reuse, scope + '5')
+        hidden6 = tf.reshape(hidden6, [-1, np.prod([int(dim) for dim in hidden6.get_shape()[1:]])])
 
-        return hidden4
+        return hidden6
 
     def forward(self, inp, weights, step, reuse=False, scope=''):
         """The function to forward the resnet during meta-train phase
@@ -68,10 +70,11 @@ class Models:
         hidden2 = conv_block(hidden1, weights['conv2'], weights['b2'], reuse, scope + '1' + str(step))
         hidden3 = conv_block(hidden2, weights['conv3'], weights['b3'], reuse, scope + '2' + str(step))
         hidden4 = conv_block(hidden3, weights['conv4'], weights['b4'], reuse, scope + '3' + str(step))
-        hidden4 = tf.reshape(hidden4, [-1, np.prod([int(dim) for dim in hidden4.get_shape()[1:]])])
+        hidden5 = conv_block_no_pool(hidden4, weights['conv5'], weights['b5'], reuse, scope + '4' + str(step))
+        hidden6 = conv_block_no_pool(hidden5, weights['conv6'], weights['b6'], reuse, scope + '5' + str(step))
+        hidden6 = tf.reshape(hidden6, [-1, np.prod([int(dim) for dim in hidden6.get_shape()[1:]])])
 
-        return hidden4
-
+        return hidden6
 
     def forward_fc(self, inp, fc_weights):
         """The function to forward the fc layer
@@ -81,7 +84,7 @@ class Models:
         Return:
           The processed feature maps.
         """
-        net = tf.matmul(inp, fc_weights['w5']) + fc_weights['b5']
+        net = tf.matmul(inp, fc_weights['w7']) + fc_weights['b7']
         return net
 
     def construct_fc_weights(self):
@@ -95,12 +98,12 @@ class Models:
         filter_num = 32
 
         if FLAGS.phase=='pre':
-            fc_weights['w5'] = tf.get_variable('fc_w5', [filter_num, FLAGS.pretrain_class_num], initializer=fc_initializer)
-            fc_weights['b5'] = tf.Variable(tf.zeros([FLAGS.pretrain_class_num]), name='fc_b5')
+            fc_weights['w7'] = tf.get_variable('fc_w7', [filter_num, FLAGS.pretrain_class_num], initializer=fc_initializer)
+            fc_weights['b7'] = tf.Variable(tf.zeros([FLAGS.pretrain_class_num]), name='fc_b7')
         else:
             # assumes max pooling
-            fc_weights['w5'] = tf.get_variable('w5', [filter_num * 5 * 5, self.dim_output], initializer=fc_initializer)
-            fc_weights['b5'] = tf.Variable(tf.zeros([self.dim_output]), name='b5')
+            fc_weights['w7'] = tf.get_variable('w7', [filter_num * 5 * 5, self.dim_output], initializer=fc_initializer)
+            fc_weights['b7'] = tf.Variable(tf.zeros([self.dim_output]), name='b7')
         return fc_weights
 
     def construct_weights(self):
@@ -122,6 +125,12 @@ class Models:
         weights['b3'] = tf.Variable(tf.zeros([filter_num]))
         weights['conv4'] = tf.get_variable('conv4', [k, k,filter_num, filter_num], initializer=conv_initializer, dtype=dtype)
         weights['b4'] = tf.Variable(tf.zeros([filter_num]))
+
+        # Additional conv weights for conv6
+        weights['conv5'] = tf.get_variable('conv5', [k, k, filter_num, filter_num], initializer=conv_initializer, dtype=dtype)
+        weights['b5'] = tf.Variable(tf.zeros([filter_num]))
+        weights['conv6'] = tf.get_variable('conv6', [k, k, filter_num, filter_num], initializer=conv_initializer, dtype=dtype)
+        weights['b6'] = tf.Variable(tf.zeros([filter_num]))
 
         return weights
 
