@@ -345,3 +345,58 @@ def get_trainable_bn_vars(scope):
     global_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
     return [var for var in global_vars if any(var_name in var.name for var_name in \
                                               ['gamma', 'beta'])]
+
+def compute_prototypes(embeddings, labels):
+    """Computes class prototypes over the last dimension of embeddings.
+
+    Args:
+    embeddings: Tensor of examples of shape [num_examples, embedding_size].
+    labels: Tensor of one-hot encoded labels of shape [num_examples,
+      num_classes].
+
+    Returns:
+    prototypes: Tensor of class prototypes of shape [num_classes,
+    embedding_size].
+    """
+    # [num examples, 1, embedding size].
+    embeddings = tf.expand_dims(embeddings, 1)
+
+    # [num examples, num classes, 1].
+    labels = tf.expand_dims(labels, 2)
+
+    # Sums each class' embeddings. [num classes, embedding size].
+    class_sums = tf.reduce_sum(labels * embeddings, 0)
+
+    # The prototype of each class is the averaged embedding of its examples.
+    class_num_images = tf.reduce_sum(labels, 0)  # [way].
+    prototypes = class_sums / class_num_images
+
+    return prototypes
+
+def proto_maml_fc_weights(prototypes):
+    """Computes the Prototypical MAML fc layer's weights.
+
+    Args:
+      prototypes: Tensor of shape [num_classes, embedding_size]
+
+    Returns:
+      fc_weights: Tensor of shape [embedding_size, num_classes]
+    """
+    fc_weights = 2 * prototypes
+    fc_weights = tf.transpose(fc_weights)
+    return fc_weights
+
+def proto_maml_fc_bias(prototypes):
+    """Computes the Prototypical MAML fc layer's bias.
+
+    Args:
+      prototypes: Tensor of shape [num_classes, embedding_size]
+
+    Returns:
+      fc_bias: Tensor of shape [num_classes] or [MAX_WAY]
+        when zero_pad_to_max_way is True.
+    """
+    fc_bias = -tf.square(tf.norm(prototypes, axis=1))
+    return fc_bias
+
+

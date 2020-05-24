@@ -12,7 +12,7 @@
 """ Models for meta-learning. """
 import tensorflow as tf
 from tensorflow.python.platform import flags
-from utils.misc import mse, softmaxloss, xent, get_bn_vars
+from utils.misc import get_bn_vars, compute_prototypes, proto_maml_fc_weights, proto_maml_fc_bias
 
 FLAGS = flags.FLAGS
 
@@ -256,6 +256,15 @@ def MakeMetaModel():
 
             # Forward and compute loss
             emb_outputa = self.forward(inputa, weights, step=step, reuse=reuse)
+
+            if step == 0 and FLAGS.proto_maml:
+                prototypes = compute_prototypes(emb_outputa, labela)
+                for key in fc_weights:
+                    if 'w' in key:
+                        fc_weights[key] = proto_maml_fc_weights(prototypes)
+                    elif 'b' in key:
+                        fc_weights[key] = proto_maml_fc_bias(prototypes)
+
             outputa = self.forward_fc(emb_outputa, fc_weights)
             lossa = self.loss_func(outputa, labela)
 

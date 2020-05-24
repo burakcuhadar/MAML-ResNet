@@ -35,12 +35,14 @@ flags.DEFINE_integer('pretrain_class_num', 64, 'number of classes used in the pr
 flags.DEFINE_integer('pretrain_batch_size', 64, 'batch_size for the pre-train phase')
 flags.DEFINE_integer('pretrain_iterations', 30000, 'number of pretraining iterations.')
 flags.DEFINE_integer('pre_sum_step', 10, 'the step number to summary during pretraining')
-flags.DEFINE_integer('pre_save_step', 1000, 'the step number to save the pretrain model')
+flags.DEFINE_integer('pre_save_step', 100, 'the step number to save the pretrain model')
 flags.DEFINE_integer('pre_print_step', 1000, 'the step number to print the pretrain results')
+flags.DEFINE_integer('pre_val_print_step', 500, 'the step number to print the preval results')
 flags.DEFINE_float('pre_lr', 0.001, 'the pretrain learning rate')
 flags.DEFINE_float('min_pre_lr', 0.0001, 'the pretrain learning rate min')
 flags.DEFINE_float('pretrain_dropout_keep', 0.9, 'the dropout keep parameter in the pre-train phase')
 flags.DEFINE_string('pretrain_folders', './data/mini-imagenet/train', 'directory for pre-train data')
+flags.DEFINE_string('preval_dir', './data/mini-imagenet/val', 'directory for pre-val data')
 flags.DEFINE_string('pretrain_label', 'mini_normal', 'additional label for the pre-train log folder')
 flags.DEFINE_bool('pre_lr_stop', False, 'whether stop decrease the pre_lr when it is low')
 
@@ -75,6 +77,7 @@ flags.DEFINE_bool('metatrain', True, 'is this the meta-train phase')
 flags.DEFINE_bool('base_augmentation', True, 'whether do data augmentation during base learning')
 flags.DEFINE_bool('redo_init', True, 're-build the initialization weights')
 flags.DEFINE_bool('from_scratch', False, 'start meta-train from scratch, do not use pre-train weights')
+flags.DEFINE_bool('proto_maml', False, 'whether to use proto-maml initialization for fc weights')
 
 # Generate experiment key words string
 exp_string = 'arch(' + FLAGS.backbone_arch + ')'

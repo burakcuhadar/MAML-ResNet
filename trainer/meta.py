@@ -119,8 +119,7 @@ class MetaTrainer:
 
                     # Assign pretrained weights to tensorflow variables
                     for key in weights.keys():
-                        if key != 'b5' and key != 'w5':
-                            self.sess.run(tf.assign(self.model.weights[key], weights[key]))
+                        self.sess.run(tf.assign(self.model.weights[key], weights[key]))
                     for key in bn_vars.keys():
                         for step in range(FLAGS.train_base_epoch_num):
                             self.sess.run(tf.assign(self.model.bn_vars[key + str(step)], bn_vars[key]))
@@ -138,20 +137,23 @@ class MetaTrainer:
                     weights = np.load(this_init_dir + 'weights_init.npy', allow_pickle=True, encoding="latin1").tolist()
                     bn_vars = np.load(this_init_dir + 'bn_vars_init.npy', allow_pickle=True, encoding="latin1").tolist()
                     #fc_weights = np.load(this_init_dir + 'fc_weights_init.npy', allow_pickle=True, encoding="latin1").tolist()
+                    inner_lrs = np.load(this_init_dir + 'inner_lrs_init.npy', allow_pickle=True, encoding="latin1").tolist()
                     for key in weights.keys():
-                        if key != 'b5' or key != 'w5':
-                            self.sess.run(tf.assign(self.model.weights[key], weights[key]))
+                        self.sess.run(tf.assign(self.model.weights[key], weights[key]))
                     #for key in fc_weights.keys():
                     #    self.sess.run(tf.assign(self.model.fc_weights[key], fc_weights[key]))
                     for key in bn_vars.keys():
                         self.sess.run(tf.assign(self.model.bn_vars[key], bn_vars[key]))
+                    for idx in range(len(inner_lrs)):
+                        self.sess.run(tf.assign(self.model.inner_lrs[idx], inner_lrs[idx]))
                     print('Init weights loaded')
         else:
             # Load the saved weights of meta-train
             weights = np.load(self.logdir + '/' + exp_string +  '/weights_' + str(FLAGS.test_iter) + '.npy',
                 allow_pickle=True, encoding="latin1").tolist()
-            fc_weights = np.load(self.logdir + '/' + exp_string +  '/fc_weights_' + str(FLAGS.test_iter) + '.npy',
-                allow_pickle=True, encoding="latin1").tolist()
+            if not FLAGS.proto_maml:
+                fc_weights = np.load(self.logdir + '/' + exp_string +  '/fc_weights_' + str(FLAGS.test_iter) + '.npy',
+                    allow_pickle=True, encoding="latin1").tolist()
             inner_lrs = np.load(self.logdir + '/' + exp_string + '/inner_lrs_' + str(FLAGS.test_iter) + '.npy',
                                 allow_pickle=True, encoding="latin1").tolist()
             bn_vars = np.load(self.logdir + '/' + exp_string + '/bn_vars_' + str(FLAGS.test_iter) + '.npy',
@@ -165,10 +167,10 @@ class MetaTrainer:
 
             # Assign the weights to the tensorflow variables
             for key in weights.keys():
-                if key != 'b5' or key != 'w5':
-                    self.sess.run(tf.assign(self.model.weights[key], weights[key]))
-            for key in fc_weights.keys():
-                self.sess.run(tf.assign(self.model.fc_weights[key], fc_weights[key]))
+                self.sess.run(tf.assign(self.model.weights[key], weights[key]))
+            if not FLAGS.proto_maml:
+                for key in fc_weights.keys():
+                    self.sess.run(tf.assign(self.model.fc_weights[key], fc_weights[key]))
 
 
             print('Weights loaded')
@@ -185,7 +187,6 @@ class MetaTrainer:
         if FLAGS.full_gpu_memory_mode:
             gpu_config = tf.ConfigProto()
             gpu_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_rate
-            gpu_config.gpu_options.allow_growth = True
             self.sess = tf.InteractiveSession(config=gpu_config)
         else:
             config = tf.ConfigProto()
@@ -259,11 +260,13 @@ class MetaTrainer:
             # Save the model during meta-train
             if train_idx != 0 and train_idx % FLAGS.meta_save_step == 0:
                 weights = self.sess.run(self.model.weights)
-                fc_weights = self.sess.run(self.model.fc_weights)
+                if not FLAGS.proto_maml:
+                    fc_weights = self.sess.run(self.model.fc_weights)
                 inner_lrs = self.sess.run(self.model.inner_lrs)
                 bn_vars = self.sess.run(self.model.bn_vars)
                 np.save(self.logdir + '/' + exp_string + '/weights_'    + str(train_idx + FLAGS.resume_iter) + '.npy', weights)
-                np.save(self.logdir + '/' + exp_string + '/fc_weights_' + str(train_idx + FLAGS.resume_iter) + '.npy', fc_weights)
+                if not FLAGS.proto_maml:
+                    np.save(self.logdir + '/' + exp_string + '/fc_weights_' + str(train_idx + FLAGS.resume_iter) + '.npy', fc_weights)
                 np.save(self.logdir + '/' + exp_string + '/inner_lrs_'  + str(train_idx + FLAGS.resume_iter) + '.npy', inner_lrs)
                 np.save(self.logdir + '/' + exp_string + '/bn_vars_'    + str(train_idx + FLAGS.resume_iter) + '.npy', bn_vars)
 
@@ -287,10 +290,7 @@ class MetaTrainer:
                     test_loss.append(test_result[0])
                     test_accs.append(test_result[1])
 
-                    try:
-                        test_aucs.append(roc_auc_score(test_labelb[0], test_result[2][0]))
-                    except ValueError:
-                        pass
+                    test_aucs.append(roc_auc_score(test_labelb[0], test_result[2][0]))
 
 
                 valsum_feed_dict = {self.model.input_val_loss: \
@@ -312,11 +312,13 @@ class MetaTrainer:
 
         # Save the final model
         weights = self.sess.run(self.model.weights)
-        fc_weights = self.sess.run(self.model.fc_weights)
+        if not FLAGS.proto_maml:
+            fc_weights = self.sess.run(self.model.fc_weights)
         inner_lrs = self.sess.run(self.model.inner_lrs)
         bn_vars = self.sess.run(self.model.bn_vars)
         np.save(self.logdir + '/' + exp_string + '/weights_'    + str(train_idx+1 + FLAGS.resume_iter) + '.npy', weights)
-        np.save(self.logdir + '/' + exp_string + '/fc_weights_' + str(train_idx+1 + FLAGS.resume_iter) + '.npy', fc_weights)
+        if not FLAGS.proto_maml:
+            np.save(self.logdir + '/' + exp_string + '/fc_weights_' + str(train_idx+1 + FLAGS.resume_iter) + '.npy', fc_weights)
         np.save(self.logdir + '/' + exp_string + '/inner_lrs_'  + str(train_idx+1 + FLAGS.resume_iter) + '.npy', inner_lrs)
         np.save(self.logdir + '/' + exp_string + '/bn_vars_'    + str(train_idx+1 + FLAGS.resume_iter) + '.npy', bn_vars)
 

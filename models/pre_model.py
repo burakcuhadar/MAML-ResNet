@@ -31,6 +31,11 @@ def MakePreModel():
             from conv4 import Models
         except ImportError:#python3
             from models.conv4 import Models
+    elif FLAGS.backbone_arch == 'conv6':
+        try:  # python2
+            from conv6 import Models
+        except ImportError:  # python3
+            from models.conv6 import Models
     else:
         print('Please set the correct backbone')
 
@@ -51,8 +56,8 @@ def MakePreModel():
 
                 if is_val is False:
                     self.pretrain_task_output = self.forward_fc(
-                        self.forward_pretrain(self.input, weights, is_training=tf.constant(True), reuse=False), fc_weights)
-                    self.bn_vars = bn_vars = get_bn_vars('pretrain-model')
+                        self.forward_pretrain(self.input, weights, reuse=False), fc_weights)
+                    self.bn_vars = get_bn_vars('pretrain-model')
 
                     self.pretrain_task_loss = self.pretrain_loss_func(self.pretrain_task_output, self.label)
                     optimizer = tf.train.AdamOptimizer(self.pretrain_lr)
@@ -63,7 +68,7 @@ def MakePreModel():
                     tf.summary.scalar('pretrain train accuracy', self.pretrain_task_accuracy)
                 else:
                     self.pretrain_task_output_val = self.forward_fc(
-                        self.forward_pretrain(self.input, weights, is_training=tf.constant(False), reuse=True), fc_weights)
+                        self.forward_pretrain(self.input, weights, reuse=True), fc_weights)
                     self.pretrain_task_accuracy_val = tf.reduce_mean(tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax(
                         self.pretrain_task_output_val), 1), tf.argmax(self.label, 1)))
                     tf.summary.scalar('pretrain val accuracy', self.pretrain_task_accuracy_val)
