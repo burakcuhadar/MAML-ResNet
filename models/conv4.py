@@ -98,13 +98,14 @@ class Models:
             fc_weights['w5'] = tf.get_variable('fc_w5', [filter_num, FLAGS.pretrain_class_num], initializer=fc_initializer)
             fc_weights['b5'] = tf.Variable(tf.zeros([FLAGS.pretrain_class_num]), name='fc_b5')
         else:
+            filter_dim = FLAGS.img_size // 16
             # assumes max pooling
-            fc_weights['w5'] = tf.get_variable('w5', [filter_num * 5 * 5, self.dim_output], initializer=fc_initializer)
+            fc_weights['w5'] = tf.get_variable('w5', [filter_num * filter_dim * filter_dim, self.dim_output], initializer=fc_initializer)
             fc_weights['b5'] = tf.Variable(tf.zeros([self.dim_output]), name='b5')
         return fc_weights
 
     def construct_weights(self):
-        """The function to construct resnet weights.
+        """The function to construct weights.
         Return:
           The resnet weights.
         """
