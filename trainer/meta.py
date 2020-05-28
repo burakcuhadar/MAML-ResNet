@@ -31,6 +31,9 @@ FLAGS = flags.FLAGS
 class MetaTrainer:
     """The class that contains the code for the meta-train and meta-test."""
     def __init__(self, exp_string, logdir, pre_string, pretrain_dir):
+        # Remove the saved datalist for a new experiment
+        os.system('rm -r ./logs/processed_data/*')
+
         self.exp_string = exp_string
         self.logdir = logdir
         self.pre_string = pre_string
@@ -40,50 +43,30 @@ class MetaTrainer:
             # Build model for meta-train phase
             print('Building meta-train model')
             self.model = MakeMetaModel()
-
-            # Start tensorflow session
-            self.start_session()
-            # Generate data for meta-train phase
-            random.seed(5)
-            image_tensor, label_tensor = data_generator.generate_data(data_type='train')
-            inputa = tf.slice(image_tensor, [0, 0, 0], [-1, FLAGS.way_num * FLAGS.shot_num, -1])
-            inputb = tf.slice(image_tensor, [0, FLAGS.way_num * FLAGS.shot_num, 0], [-1, -1, -1])
-            labela = tf.slice(label_tensor, [0, 0, 0], [-1, FLAGS.way_num * FLAGS.shot_num, -1])
-            labelb = tf.slice(label_tensor, [0, FLAGS.way_num * FLAGS.shot_num, 0], [-1, -1, -1])
-            input_tensors = {'inputa': inputa, 'inputb': inputb, 'labela': labela, 'labelb': labelb}
-
-            self.model.construct_model(input_tensors, train_phase=True)
-
-            random.seed(9)
-            image_tensor, label_tensor = data_generator.generate_data(data_type='val')
-            inputa = tf.slice(image_tensor, [0, 0, 0], [-1, FLAGS.way_num * FLAGS.shot_num, -1])
-            inputb = tf.slice(image_tensor, [0, FLAGS.way_num * FLAGS.shot_num, 0], [-1, -1, -1])
-            labela = tf.slice(label_tensor, [0, 0, 0], [-1, FLAGS.way_num * FLAGS.shot_num, -1])
-            labelb = tf.slice(label_tensor, [0, FLAGS.way_num * FLAGS.shot_num, 0], [-1, -1, -1])
-            input_tensors = {'inputa': inputa, 'inputb': inputb, 'labela': labela, 'labelb': labelb}
-
-            self.model.construct_model(input_tensors, train_phase=False)
+            self.model.construct_model()
 
             print('Meta-train model is built')
 
+            # Start tensorflow session
+            self.start_session()
+
+            # Generate data for meta-train phase
+            random.seed(5)
+            data_generator.generate_data(data_type='train')
+            random.seed(9)
+            data_generator.generate_data(data_type='val')
         else:
             # Build model for meta-test phase
             print('Building meta-test mdoel')
             self.model = MakeMetaModel()
+            self.model.construct_test_model()
+            self.model.summ_op = tf.summary.merge_all()
             print('Meta-test model is built')
             # Start tensorflow session
             self.start_session()
             # Generate data for meta-test phase
             random.seed(7)
-            image_tensor, label_tensor = data_generator.generate_data(data_type='test')
-            inputa = tf.slice(image_tensor, [0, 0, 0], [-1, FLAGS.way_num * FLAGS.shot_num, -1])
-            inputb = tf.slice(image_tensor, [0, FLAGS.way_num * FLAGS.shot_num, 0], [-1, -1, -1])
-            labela = tf.slice(label_tensor, [0, 0, 0], [-1, FLAGS.way_num * FLAGS.shot_num, -1])
-            labelb = tf.slice(label_tensor, [0, FLAGS.way_num * FLAGS.shot_num, 0], [-1, -1, -1])
-            input_tensors = {'inputa': inputa, 'inputb': inputb, 'labela': labela, 'labelb': labelb}
-
-            self.model.construct_test_model(input_tensors)
-            self.model.summ_op = tf.summary.merge_all()
+            data_generator.generate_data(data_type='test')
 
         # Global initialization and starting queue
         tf.global_variables_initializer().run()
@@ -227,10 +210,32 @@ class MetaTrainer:
         if FLAGS.resume_iter > 0:
             train_lr = FLAGS.resume_lr
 
+        # Load data for meta-train and meta validation
+        data_generator.load_data(data_type='train')
+        data_generator.load_data(data_type='val')
 
         for train_idx in trange(FLAGS.metatrain_iterations):
+            # Load the episodes for this meta batch
+            inputa = []
+            labela = []
+            inputb = []
+            labelb = []
+            for meta_batch_idx in range(FLAGS.meta_batch_size):
+                this_episode = data_generator.load_episode(index=train_idx * FLAGS.meta_batch_size + meta_batch_idx,
+                                                           data_type='train')
+                inputa.append(this_episode[0])
+                labela.append(this_episode[1])
+                inputb.append(this_episode[2])
+                labelb.append(this_episode[3])
+            inputa = np.array(inputa)
+            labela = np.array(labela)
+            inputb = np.array(inputb)
+            labelb = np.array(labelb)
+
             # Generate feed dict for the tensorflow graph
-            feed_dict = {self.model.meta_lr: train_lr}
+            feed_dict = {self.model.inputa: inputa, self.model.inputb: inputb,
+                         self.model.labela: labela, self.model.labelb: labelb,
+                         self.model.meta_lr: train_lr}
 
             # Set the variables to load from the tensorflow graph
             input_tensors = [self.model.metatrain_op] # The meta train optimizer
@@ -272,24 +277,32 @@ class MetaTrainer:
                 test_accs = []
                 test_aucs = []
                 for test_itr in range(FLAGS.meta_intrain_val_sample):
-                    test_feed_dict = {self.model.meta_lr: 0.0}
-                    test_input_tensors = [self.model.metaval_total_loss,
-                                          self.model.metaval_total_accuracy,
-                                          self.model.softmax_probs,
-                                          self.model.labelb]
+                    this_episode = data_generator.load_episode(index=test_itr, data_type='val')
+                    test_inputa = this_episode[0][np.newaxis, :]
+                    test_labela = this_episode[1][np.newaxis, :]
+                    test_inputb = this_episode[2][np.newaxis, :]
+                    test_labelb = this_episode[3][np.newaxis, :]
+
+                    test_feed_dict = {self.model.inputa: test_inputa, self.model.inputb: test_inputb,
+                        self.model.labela: test_labela, self.model.labelb: test_labelb,
+                        self.model.meta_lr: 0.0}
+
+                    test_input_tensors = [self.model.total_loss,
+                                          self.model.total_accuracy,
+                                          self.model.softmax_probs]
                     test_result = self.sess.run(test_input_tensors, test_feed_dict)
                     test_loss.append(test_result[0])
                     test_accs.append(test_result[1])
 
-                    test_aucs.append(roc_auc_score(test_result[3][0], test_result[2][0]))
+                    test_aucs.append(roc_auc_score(test_labelb[0], test_result[2][0]))
 
                 valsum_feed_dict = {self.model.input_val_loss: \
-                    np.mean(test_loss)/np.float(FLAGS.shot_num),
-                    self.model.input_val_acc: np.mean(test_accs)}
+                    np.mean(test_loss)*np.float(FLAGS.meta_batch_size)/np.float(FLAGS.shot_num),
+                    self.model.input_val_acc: np.mean(test_accs)*np.float(FLAGS.meta_batch_size)}
                 valsum = self.sess.run(self.model.val_summ_op, valsum_feed_dict)
                 train_writer.add_summary(valsum, train_idx)
-                print_str = '[***] Val Loss:' + str(np.mean(test_loss)) + \
-                    ' Val Acc:' + str(np.mean(test_accs)) + \
+                print_str = '[***] Val Loss:' + str(np.mean(test_loss)*FLAGS.meta_batch_size) + \
+                    ' Val Acc:' + str(np.mean(test_accs)*FLAGS.meta_batch_size) + \
                     ' Val Auc:' + str(np.mean(test_aucs))
                 print(print_str)
 
@@ -326,15 +339,27 @@ class MetaTrainer:
         # Generate empty list to record accuracies
         metaval_accuracies = []
         metaval_aucs = []
-
+        # Load data for meta-test
+        data_generator.load_data(data_type='test')
         for test_idx in trange(NUM_TEST_POINTS):
-            feed_dict = {self.model.meta_lr: 0.0}
+            # Load one episode for meta-test
+            this_episode = data_generator.load_episode(index=test_idx, data_type='test')
+            test_inputa = this_episode[0][np.newaxis, :]
+            test_labela = this_episode[1][np.newaxis, :]
+            test_inputb = this_episode[2][np.newaxis, :]
+            test_labelb = this_episode[3][np.newaxis, :]
+
+            feed_dict = {
+                self.model.inputa: test_inputa, self.model.inputb: test_inputb,
+                self.model.labela: test_labela, self.model.labelb: test_labelb,
+                self.model.meta_lr: 0.0}
+
             result = self.sess.run([self.model.metaval_total_accuracy,
-                                    self.model.metaval_softmax_probs,
-                                    self.model.labelb],
+                                    self.model.metaval_softmax_probs],
                                    feed_dict)
+
             metaval_accuracies.append(result[0])
-            metaval_aucs.append(roc_auc_score(result[2][0], result[1][0]))
+            metaval_aucs.append(roc_auc_score(test_labelb[0], result[1][0]))
 
         # Calculate the mean accuracies and the confidence intervals
         #metaval_accuracies = np.array(metaval_accuracies)

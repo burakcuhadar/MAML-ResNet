@@ -41,13 +41,13 @@ def MakeMetaModel():
 
     class MetaModel(Models):
         """The class for the meta models. This class is inheritance from Models, so some variables are in the Models class."""
-        def construct_model(self, input_tensors, train_phase=True):
+        def construct_model(self):
             """The function to construct meta-train model."""
             # Set input tensors for the input episode
-            self.inputa = input_tensors['inputa']
-            self.inputb = input_tensors['inputb']
-            self.labela = input_tensors['labela']
-            self.labelb = input_tensors['labelb']
+            self.inputa = tf.placeholder(tf.float32)
+            self.inputb = tf.placeholder(tf.float32)
+            self.labela = tf.placeholder(tf.float32)
+            self.labelb = tf.placeholder(tf.float32)
 
             # Load base epoch number from FLAGS
             num_updates = FLAGS.train_base_epoch_num
@@ -125,51 +125,47 @@ def MakeMetaModel():
                 # Separate the outputs to different variables
                 lossb, accsb, softmax_probs = result
 
-            if train_phase:
-                print("Constructing output variables")
-                # Set the variables to output from the tensorflow graph
-                self.total_loss = total_loss = tf.reduce_sum(lossb) / tf.to_float(FLAGS.meta_batch_size)
-                self.total_accuracy = total_accuracy = tf.reduce_sum(accsb) / tf.to_float(FLAGS.meta_batch_size)
 
-                # Save batch normalization variables
-                self.bn_vars = get_bn_vars('meta-model')
+            print("Constructing output variables")
+            # Set the variables to output from the tensorflow graph
+            self.total_loss = total_loss = tf.reduce_sum(lossb) / tf.to_float(FLAGS.meta_batch_size)
+            self.total_accuracy = total_accuracy = tf.reduce_sum(accsb) / tf.to_float(FLAGS.meta_batch_size)
 
-                # Set the meta-train optimizer
-                optimizer = tf.train.AdamOptimizer(self.meta_lr)
-                grads_and_vars = optimizer.compute_gradients(total_loss)
-                grads_and_vars = [(tf.clip_by_value(grad, -10, 10), var) for grad, var in grads_and_vars if grad is not None]
-                self.metatrain_op = optimizer.apply_gradients(grads_and_vars)
+            self.softmax_probs = softmax_probs
 
-                print("Setting the tensorboard")
-                # Set the tensorboard
-                self.training_summaries = []
-                self.training_summaries.append(tf.summary.scalar('Meta Train Loss', (total_loss / tf.to_float(FLAGS.metatrain_epite_sample_num))))
-                self.training_summaries.append(tf.summary.scalar('Meta Train Accuracy', total_accuracy))
+            # Save batch normalization variables
+            self.bn_vars = get_bn_vars('meta-model')
 
-                self.training_summ_op = tf.summary.merge(self.training_summaries)
+            # Set the meta-train optimizer
+            optimizer = tf.train.AdamOptimizer(self.meta_lr)
+            grads_and_vars = optimizer.compute_gradients(total_loss)
+            grads_and_vars = [(tf.clip_by_value(grad, -10, 10), var) for grad, var in grads_and_vars if grad is not None]
+            self.metatrain_op = optimizer.apply_gradients(grads_and_vars)
 
-                self.input_val_loss = tf.placeholder(tf.float32)
-                self.input_val_acc = tf.placeholder(tf.float32)
-                self.val_summaries = []
-                self.val_summaries.append(tf.summary.scalar('Meta Val Loss', self.input_val_loss))
-                self.val_summaries.append(tf.summary.scalar('Meta Val Accuracy', self.input_val_acc))
-                self.val_summ_op = tf.summary.merge(self.val_summaries)
+            print("Setting the tensorboard")
+            # Set the tensorboard
+            self.training_summaries = []
+            self.training_summaries.append(tf.summary.scalar('Meta Train Loss', (total_loss / tf.to_float(FLAGS.metatrain_epite_sample_num))))
+            self.training_summaries.append(tf.summary.scalar('Meta Train Accuracy', total_accuracy))
 
-            else:
-                self.metaval_total_loss = total_loss = tf.reduce_sum(lossb)
-                self.metaval_total_accuracy = total_accuracy = tf.reduce_sum(accsb)
-                # Used for computing AUC score
-                self.softmax_probs = softmax_probs
+            self.training_summ_op = tf.summary.merge(self.training_summaries)
+
+            self.input_val_loss = tf.placeholder(tf.float32)
+            self.input_val_acc = tf.placeholder(tf.float32)
+            self.val_summaries = []
+            self.val_summaries.append(tf.summary.scalar('Meta Val Loss', self.input_val_loss))
+            self.val_summaries.append(tf.summary.scalar('Meta Val Accuracy', self.input_val_acc))
+            self.val_summ_op = tf.summary.merge(self.val_summaries)
 
         print("Meta-model is constructed.")
 
-        def construct_test_model(self, input_tensors):
+        def construct_test_model(self):
             """The function to construct meta-test model."""
             # Set the placeholder for the input episode
-            self.inputa = input_tensors['inputa']
-            self.inputb = input_tensors['inputb']
-            self.labela = input_tensors['labela']
-            self.labelb = input_tensors['labelb']
+            self.inputa = tf.placeholder(tf.float32)
+            self.inputb = tf.placeholder(tf.float32)
+            self.labela = tf.placeholder(tf.float32)
+            self.labelb = tf.placeholder(tf.float32)
 
             with tf.variable_scope('meta-test-model', reuse=None) as training_scope:
                 # construct the model weights

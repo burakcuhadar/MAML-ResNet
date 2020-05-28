@@ -139,7 +139,7 @@ def process_batch_augmentation(input_filename_list, input_label_list, dim_input,
     return img_array, label_array
 
 
-def get_images(paths, labels, nb_samples=None):
+def get_images(paths, labels, nb_samples=None, shuffle=True):
     """The function to get the image files' directories with given class labels.
     Args:
       paths: the base path for the images.
@@ -156,6 +156,8 @@ def get_images(paths, labels, nb_samples=None):
     images = [(i, os.path.join(path, image)) \
         for i, path in zip(labels, paths) \
         for image in sampler(os.listdir(path))]
+    if shuffle:
+        random.shuffle(images)
 
     return images
 
