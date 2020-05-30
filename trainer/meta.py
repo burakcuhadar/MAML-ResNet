@@ -51,9 +51,7 @@ class MetaTrainer:
             self.start_session()
 
             # Generate data for meta-train phase
-            random.seed(5)
             data_generator.generate_data(data_type='train')
-            random.seed(9)
             data_generator.generate_data(data_type='val')
         else:
             # Build model for meta-test phase
@@ -65,7 +63,6 @@ class MetaTrainer:
             # Start tensorflow session
             self.start_session()
             # Generate data for meta-test phase
-            random.seed(7)
             data_generator.generate_data(data_type='test')
 
         # Global initialization and starting queue
@@ -335,7 +332,6 @@ class MetaTrainer:
         # Load the experiment setting string from FLAGS
         exp_string = self.exp_string
         print('Start meta-test phase')
-        np.random.seed(1)
         # Generate empty list to record accuracies
         metaval_accuracies = []
         metaval_aucs = []
