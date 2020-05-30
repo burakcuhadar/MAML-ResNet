@@ -22,6 +22,7 @@ FLAGS = flags.FLAGS
 ### Basic options
 flags.DEFINE_integer('img_size', 84, 'image size')
 flags.DEFINE_integer('device_id', 0, 'GPU device ID to run the job.')
+flags.DEFINE_integer('filter_num', 32, 'number of filters to use in cnn models')
 flags.DEFINE_float('gpu_rate', 0.9, 'the parameter for the full_gpu_memory_mode')
 flags.DEFINE_string('phase', 'meta', 'pre or meta')
 flags.DEFINE_string('exp_log_label', 'experiment_results', 'directory for summaries and checkpoints')

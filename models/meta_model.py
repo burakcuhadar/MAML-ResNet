@@ -53,25 +53,18 @@ def MakeMetaModel():
             num_updates = FLAGS.train_base_epoch_num
 
             with tf.variable_scope('meta-model', reuse=None) as training_scope:
-
-                if 'weights' in dir(self):
-                    training_scope.reuse_variables()
-                    weights = self.weights
-                    fc_weights = self.fc_weights
-                    inner_lrs = self.inner_lrs
-                else:
-                    # construct the model weights
-                    self.weights = weights = self.construct_weights()
-                    # we do not need the fc weights of the pretrain model
-                    if FLAGS.backbone_arch=='conv4':
-                        self.weights.pop('w5', None)
-                        self.weights.pop('b5', None)
-                    if FLAGS.backbone_arch == 'conv6':
-                        self.weights.pop('w7', None)
-                        self.weights.pop('b7', None)
-                    self.fc_weights = fc_weights = self.construct_fc_weights()
-                    # Use different learning rate per conv block per step
-                    self.inner_lrs = inner_lrs = self.construct_inner_lrs(num_updates)
+                # construct the model weights
+                self.weights = weights = self.construct_weights()
+                # we do not need the fc weights of the pretrain model
+                if FLAGS.backbone_arch=='conv4':
+                    self.weights.pop('w5', None)
+                    self.weights.pop('b5', None)
+                if FLAGS.backbone_arch == 'conv6':
+                    self.weights.pop('w7', None)
+                    self.weights.pop('b7', None)
+                self.fc_weights = fc_weights = self.construct_fc_weights()
+                # Use different learning rate per conv block per step
+                self.inner_lrs = inner_lrs = self.construct_inner_lrs(num_updates)
 
                 def task_metalearn(inp, reuse=True):
                     """The function to process one episode in a meta-batch.

@@ -95,7 +95,7 @@ class Models:
         dtype = tf.float32
         fc_weights = {}
         fc_initializer =  tf.contrib.layers.xavier_initializer(dtype=dtype)
-        filter_num = 32
+        filter_num = FLAGS.filter_num
 
         if FLAGS.phase=='pre':
             fc_weights['w7'] = tf.get_variable('fc_w7', [filter_num, FLAGS.pretrain_class_num], initializer=fc_initializer)
@@ -116,7 +116,7 @@ class Models:
         dtype = tf.float32
         conv_initializer = tf.contrib.layers.xavier_initializer_conv2d(dtype=dtype)
         k = 3
-        filter_num = 32
+        filter_num = FLAGS.filter_num
 
         weights['conv1'] = tf.get_variable('conv1', [k, k, self.channels, filter_num], initializer=conv_initializer, dtype=dtype)
         weights['b1'] = tf.Variable(tf.zeros([filter_num]))
