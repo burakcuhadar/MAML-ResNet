@@ -279,6 +279,8 @@ def MakeMetaModel():
 
             # Calculate the gradients for the fc layer and conv weights
             grads = tf.gradients(lossa, list(fc_weights.values()) + list(weights.values()))
+            if FLAGS.stop_grad:
+                grads = [tf.stop_gradient(grad) for grad in grads]
             gradients = dict(zip(list(fc_weights.keys()) + list(weights.keys()), grads))
             # Use gradient descent to update the fc layer and conv layers
             fast_fc_weights = dict(zip(fc_weights.keys(), [fc_weights[key] - \

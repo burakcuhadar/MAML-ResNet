@@ -78,6 +78,7 @@ flags.DEFINE_bool('base_augmentation', True, 'whether do data augmentation durin
 flags.DEFINE_bool('redo_init', True, 're-build the initialization weights')
 flags.DEFINE_bool('from_scratch', False, 'start meta-train from scratch, do not use pre-train weights')
 flags.DEFINE_bool('proto_maml', False, 'whether to use proto-maml initialization for fc weights')
+flags.DEFINE_bool('stop_grad', False, 'whether to use the first order approximation')
 
 # Generate experiment key words string
 exp_string = 'arch(' + FLAGS.backbone_arch + ')'
