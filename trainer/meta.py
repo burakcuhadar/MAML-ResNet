@@ -32,7 +32,7 @@ class MetaTrainer:
     """The class that contains the code for the meta-train and meta-test."""
     def __init__(self, exp_string, logdir, pre_string, pretrain_dir):
         # Remove the saved datalist for a new experiment
-        os.system('rm -r ./logs/processed_data/*')
+        os.system('rm -r ' + FLAGS.logdir_base + 'processed_data/*')
 
         self.exp_string = exp_string
         self.logdir = logdir
