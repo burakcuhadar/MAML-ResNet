@@ -78,20 +78,20 @@ def MakeMetaModel():
                     fast_weights, fast_fc_weights = self.apply_inner_loop_update(inp,
                                                                                  weights,
                                                                                  fc_weights,
-                                                                                 0,
-                                                                                 reuse)
+                                                                                 reuse,
+                                                                                 0)
 
                     for j in range(1, num_updates):
                         fast_weights, fast_fc_weights = self.apply_inner_loop_update(inp,
                                                                                      fast_weights,
                                                                                      fast_fc_weights,
-                                                                                     j,
-                                                                                     reuse)
+                                                                                     True,
+                                                                                     j)
 
                     inputa, inputb, labela, labelb = inp
 
                     # Calculate final episode test predictions
-                    emb_outputb = self.forward(inputb, fast_weights, step=num_updates, reuse=reuse)
+                    emb_outputb = self.forward(inputb, fast_weights, reuse=True)
                     outputb = self.forward_fc(emb_outputb, fast_fc_weights)
                     # Calculate the final episode test loss, it is the loss for the episode on meta-train 
                     final_lossb = self.loss_func(outputb, labelb)
@@ -190,22 +190,21 @@ def MakeMetaModel():
                     fast_weights, fast_fc_weights = self.apply_inner_loop_update(inp,
                                                                                  weights,
                                                                                  fc_weights,
-                                                                                 0,
-                                                                                 reuse)
+                                                                                 reuse,
+                                                                                 0)
 
                     for j in range(1, num_updates):
                         fast_weights, fast_fc_weights = self.apply_inner_loop_update(inp,
                                                                                      fast_weights,
                                                                                      fast_fc_weights,
-                                                                                     j,
-                                                                                     reuse)
+                                                                                     True,
+                                                                                     j)
 
                     _, inputb, _, labelb = inp
 
                     emb_outputb = self.forward(inputb,
                                                fast_weights,
-                                               step=num_updates,
-                                               reuse=reuse)
+                                               reuse=True)
                     outputb = self.forward_fc(emb_outputb, fast_fc_weights)
                     # Used for calculating accuracy and AUC score
                     probs = tf.nn.softmax(outputb)
@@ -253,11 +252,11 @@ def MakeMetaModel():
             sorted_keys = sorted(list(self.weights.keys()) + list(self.fc_weights.keys()))
             return step * (len(self.weights) + len(self.fc_weights)) + sorted_keys.index(key)
 
-        def apply_inner_loop_update(self, inp, weights, fc_weights, step, reuse):
+        def apply_inner_loop_update(self, inp, weights, fc_weights, reuse, step):
             inputa, inputb, labela, labelb = inp
 
             # Forward and compute loss
-            emb_outputa = self.forward(inputa, weights, step=step, reuse=reuse)
+            emb_outputa = self.forward(inputa, weights, reuse=reuse)
 
             if step == 0 and FLAGS.proto_maml:
                 prototypes = compute_prototypes(emb_outputa, labela)

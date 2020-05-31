@@ -52,22 +52,21 @@ class Models:
 
         return hidden4
 
-    def forward(self, inp, weights, step, reuse=False, scope=''):
+    def forward(self, inp, weights, reuse=False, scope=''):
         """The function to forward the resnet during meta-train phase
         Args:
           inp: input feature maps.
           weights: input resnet weights.
-          step: index for the inner loop, used to decide which bn layer to use
           reuse: reuse the batch norm weights or not.
           scope: the label to indicate which layer we are processing.
         Return:
           The processed feature maps.
         """
         inp = tf.reshape(inp, [-1, self.img_size, self.img_size, self.channels])
-        hidden1 = conv_block(inp, weights['conv1'], weights['b1'], reuse, scope + '0' + str(step))
-        hidden2 = conv_block(hidden1, weights['conv2'], weights['b2'], reuse, scope + '1' + str(step))
-        hidden3 = conv_block(hidden2, weights['conv3'], weights['b3'], reuse, scope + '2' + str(step))
-        hidden4 = conv_block(hidden3, weights['conv4'], weights['b4'], reuse, scope + '3' + str(step))
+        hidden1 = conv_block(inp, weights['conv1'], weights['b1'], reuse, scope + '0')
+        hidden2 = conv_block(hidden1, weights['conv2'], weights['b2'], reuse, scope + '1')
+        hidden3 = conv_block(hidden2, weights['conv3'], weights['b3'], reuse, scope + '2')
+        hidden4 = conv_block(hidden3, weights['conv4'], weights['b4'], reuse, scope + '3')
         hidden4 = tf.reshape(hidden4, [-1, np.prod([int(dim) for dim in hidden4.get_shape()[1:]])])
 
         return hidden4

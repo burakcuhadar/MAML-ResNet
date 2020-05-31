@@ -288,8 +288,6 @@ def normalize(inp, activation, reuse, scope):
     """
     if FLAGS.norm == 'batch_norm':
         return tf_layers.batch_norm(inp,
-                                    scale=True,
-                                    center=True,
                                     activation_fn=activation,
                                     reuse=reuse,
                                     scope=scope)
