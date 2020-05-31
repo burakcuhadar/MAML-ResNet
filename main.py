@@ -22,7 +22,7 @@ FLAGS = flags.FLAGS
 ### Basic options
 flags.DEFINE_integer('img_size', 84, 'image size')
 flags.DEFINE_integer('device_id', 0, 'GPU device ID to run the job.')
-flags.DEFINE_integer('filter_num', 32, 'number of filters to use in cnn models')
+flags.DEFINE_integer('filter_num', 64, 'number of filters to use in cnn models')
 flags.DEFINE_float('gpu_rate', 0.9, 'the parameter for the full_gpu_memory_mode')
 flags.DEFINE_string('phase', 'meta', 'pre or meta')
 flags.DEFINE_string('exp_log_label', 'experiment_results', 'directory for summaries and checkpoints')
@@ -32,20 +32,15 @@ flags.DEFINE_string('backbone_arch', 'conv4', 'network backbone')
 
 ### Pre-train phase options
 flags.DEFINE_integer('pre_lr_dropstep', 5000, 'the step number to drop pre_lr')
-flags.DEFINE_integer('pretrain_class_num', 64, 'number of classes used in the pre-train phase')
-flags.DEFINE_integer('pretrain_batch_size', 64, 'batch_size for the pre-train phase')
+flags.DEFINE_integer('pre_way_num', 5, 'number of classes used in the pre-train phase')
+flags.DEFINE_integer('pre_shot_num', 5, 'number of shots for each class in the pre-train phase')
+flags.DEFINE_integer('pre_batch_size', 4, 'batch_size for the pre-train phase')
+flags.DEFINE_integer('pre_base_epoch',5, 'number of inner gradient updates during pre-training')
 flags.DEFINE_integer('pretrain_iterations', 30000, 'number of pretraining iterations.')
-flags.DEFINE_integer('pre_sum_step', 10, 'the step number to summary during pretraining')
-flags.DEFINE_integer('pre_save_step', 100, 'the step number to save the pretrain model')
-flags.DEFINE_integer('pre_print_step', 1000, 'the step number to print the pretrain results')
-flags.DEFINE_integer('pre_val_print_step', 500, 'the step number to print the preval results')
 flags.DEFINE_float('pre_lr', 0.001, 'the pretrain learning rate')
+flags.DEFINE_float('pre_base_lr', 0.01, 'the pretrain base learning rate')
 flags.DEFINE_float('min_pre_lr', 0.0001, 'the pretrain learning rate min')
-flags.DEFINE_float('pretrain_dropout_keep', 0.9, 'the dropout keep parameter in the pre-train phase')
-flags.DEFINE_string('pretrain_folders', './data/mini-imagenet/train', 'directory for pre-train data')
-flags.DEFINE_string('preval_dir', './data/mini-imagenet/val', 'directory for pre-val data')
-flags.DEFINE_string('pretrain_label', 'mini_normal', 'additional label for the pre-train log folder')
-flags.DEFINE_bool('pre_lr_stop', False, 'whether stop decrease the pre_lr when it is low')
+flags.DEFINE_float('pre_lr_droprate', 0.1, 'the rate to drop pre_lr')
 
 ### Meta phase options
 flags.DEFINE_integer('way_num', 5, 'number of classes (e.g. 5-way classification)')
@@ -64,6 +59,7 @@ flags.DEFINE_integer('test_base_epoch_num', 100, 'number of inner gradient updat
 flags.DEFINE_integer('lr_drop_step', 5000, 'the step number to drop meta_lr')
 flags.DEFINE_integer('test_iter', 1000, 'iteration to load model')
 flags.DEFINE_integer('resume_iter', 0, 'iteration to resume meta-training')
+flags.DEFINE_integer('nontrainable_layers', -1, 'denotes the first layer which can be trained') #-1 means every layer is trainable
 flags.DEFINE_float('resume_lr', 0.001, 'meta-lr to use when training is resumed')
 flags.DEFINE_float('meta_lr', 0.001, 'the meta learning rate of the generator')
 flags.DEFINE_float('lr_drop_rate', 0.5, 'the step number to drop meta_lr')
@@ -81,6 +77,7 @@ flags.DEFINE_bool('from_scratch', False, 'start meta-train from scratch, do not 
 flags.DEFINE_bool('proto_maml', False, 'whether to use proto-maml initialization for fc weights')
 flags.DEFINE_bool('stop_grad', False, 'whether to use the first order approximation')
 
+
 # Generate experiment key words string
 exp_string = 'arch(' + FLAGS.backbone_arch + ')'
 exp_string +=  '.cls(' + str(FLAGS.way_num) + ')'
@@ -90,11 +87,9 @@ exp_string += '.base_epoch(' + str(FLAGS.train_base_epoch_num) + ')'
 exp_string += '.meta_lr(' + str(FLAGS.meta_lr) + ')'
 exp_string += '.base_lr(' + str(FLAGS.base_lr) + ')'
 exp_string += '.pre_iterations(' + str(FLAGS.pretrain_iterations) + ')'
-exp_string += '.pre_dropout(' + str(FLAGS.pretrain_dropout_keep) + ')'
 exp_string += '.acti(' + str(FLAGS.activation) + ')'
 exp_string += '.lr_drop_step(' + str(FLAGS.lr_drop_step) + ')'
 exp_string += '.lr_drop_rate(' + str(FLAGS.lr_drop_rate) + ')'
-exp_string += '.pre_label(' + str(FLAGS.pretrain_label) + ')'
 
 if FLAGS.norm == 'batch_norm':
     exp_string += '.norm(batch)'
@@ -109,16 +104,15 @@ print('Parameters: ' + exp_string)
 
 # Generate pre-train key words string
 pre_save_str = 'arch(' + FLAGS.backbone_arch + ')'
-pre_save_str += '.pre_lr(' + str(FLAGS.pre_lr) + ')'
-pre_save_str += '.pre_lrdrop(' + str(FLAGS.pre_lr_dropstep) + ')'
-pre_save_str += '.pre_class(' + str(FLAGS.pretrain_class_num) + ')'
-pre_save_str += '.pre_batch(' + str(FLAGS.pretrain_batch_size) + ')'
-pre_save_str += '.pre_dropout(' + str(FLAGS.pretrain_dropout_keep) + ')'
-if FLAGS.pre_lr_stop:
-    pre_save_str += '.pre_lr_stop(True)'
-else:
-    pre_save_str += '.pre_lr_stop(False)'
-pre_save_str += '.pre_label(' + FLAGS.pretrain_label + ')'
+pre_save_str += '.cls(' + str(FLAGS.pre_way_num) + ')'
+pre_save_str += '.shot(' + str(FLAGS.pre_shot_num) + ')'
+pre_save_str += '.meta_batch(' + str(FLAGS.pre_batch_size) + ')'
+pre_save_str += '.base_epoch(' + str(FLAGS.pre_base_epoch) + ')'
+pre_save_str += '.meta_lr(' + str(FLAGS.pre_lr) + ')'
+pre_save_str += '.base_lr(' + str(FLAGS.pre_base_lr) + ')'
+pre_save_str += '.lr_drop_step(' + str(FLAGS.pre_lr_dropstep) + ')'
+pre_save_str += '.lr_drop_rate(' + str(FLAGS.pre_lr_droprate) + ')'
+
 pre_string = pre_save_str
 
 # Generate log folders

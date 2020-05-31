@@ -16,7 +16,7 @@ class Models:
         # Load base learning rates from FLAGS
         self.update_lr = FLAGS.base_lr
         # Load the pre-train phase class number from FLAGS
-        self.pretrain_class_num = FLAGS.pretrain_class_num
+        self.pretrain_class_num = FLAGS.pre_way_num
         # Set the initial meta learning rate
         self.meta_lr = tf.placeholder_with_default(FLAGS.meta_lr, ())
         # Set the initial pre-train learning rate
@@ -118,20 +118,32 @@ class Models:
         k = 3
         filter_num = FLAGS.filter_num
 
-        weights['conv1'] = tf.get_variable('conv1', [k, k, self.channels, filter_num], initializer=conv_initializer, dtype=dtype)
-        weights['b1'] = tf.Variable(tf.zeros([filter_num]))
-        weights['conv2'] = tf.get_variable('conv2', [k, k, filter_num, filter_num], initializer=conv_initializer, dtype=dtype)
-        weights['b2'] = tf.Variable(tf.zeros([filter_num]))
-        weights['conv3'] = tf.get_variable('conv3', [k, k, filter_num, filter_num], initializer=conv_initializer, dtype=dtype)
-        weights['b3'] = tf.Variable(tf.zeros([filter_num]))
-        weights['conv4'] = tf.get_variable('conv4', [k, k,filter_num, filter_num], initializer=conv_initializer, dtype=dtype)
-        weights['b4'] = tf.Variable(tf.zeros([filter_num]))
+        weights['conv1'] = tf.get_variable('conv1', [k, k, self.channels, filter_num],
+                                           initializer=conv_initializer, dtype=dtype,
+                                           trainable=FLAGS.nontrainable_layers < 1)
+        weights['b1'] = tf.Variable(tf.zeros([filter_num]), trainable=FLAGS.nontrainable_layers < 1)
+        weights['conv2'] = tf.get_variable('conv2', [k, k, filter_num, filter_num],
+                                           initializer=conv_initializer, dtype=dtype,
+                                           trainable=FLAGS.nontrainable_layers < 2)
+        weights['b2'] = tf.Variable(tf.zeros([filter_num]), trainable=FLAGS.nontrainable_layers < 2)
+        weights['conv3'] = tf.get_variable('conv3', [k, k, filter_num, filter_num],
+                                           initializer=conv_initializer, dtype=dtype,
+                                           trainable=FLAGS.nontrainable_layers < 3)
+        weights['b3'] = tf.Variable(tf.zeros([filter_num]), trainable=FLAGS.nontrainable_layers < 3)
+        weights['conv4'] = tf.get_variable('conv4', [k, k,filter_num, filter_num],
+                                           initializer=conv_initializer, dtype=dtype,
+                                           trainable=FLAGS.nontrainable_layers < 4)
+        weights['b4'] = tf.Variable(tf.zeros([filter_num]), trainable=FLAGS.nontrainable_layers < 4)
 
         # Additional conv weights for conv6
-        weights['conv5'] = tf.get_variable('conv5', [k, k, filter_num, filter_num], initializer=conv_initializer, dtype=dtype)
-        weights['b5'] = tf.Variable(tf.zeros([filter_num]))
-        weights['conv6'] = tf.get_variable('conv6', [k, k, filter_num, filter_num], initializer=conv_initializer, dtype=dtype)
-        weights['b6'] = tf.Variable(tf.zeros([filter_num]))
+        weights['conv5'] = tf.get_variable('conv5', [k, k, filter_num, filter_num],
+                                           initializer=conv_initializer, dtype=dtype,
+                                           trainable=FLAGS.nontrainable_layers < 5)
+        weights['b5'] = tf.Variable(tf.zeros([filter_num]), trainable=FLAGS.nontrainable_layers < 5)
+        weights['conv6'] = tf.get_variable('conv6', [k, k, filter_num, filter_num],
+                                           initializer=conv_initializer, dtype=dtype,
+                                           trainable=FLAGS.nontrainable_layers < 6)
+        weights['b6'] = tf.Variable(tf.zeros([filter_num]), trainable=FLAGS.nontrainable_layers < 6)
 
         return weights
 

@@ -110,23 +110,29 @@ class MetaTrainer:
                     weights_save_dir = os.path.join(weights_save_dir_base, pre_save_str)
                     weights = np.load(os.path.join(weights_save_dir, "weights_{}.npy".format(FLAGS.pretrain_iterations)),
                         allow_pickle=True, encoding="latin1").tolist()
-                    bn_vars = np.load(
-                        os.path.join(weights_save_dir, "bn_vars_{}.npy".format(FLAGS.pretrain_iterations)),
+                    bn_vars = np.load(os.path.join(weights_save_dir, "bn_vars_{}.npy".format(FLAGS.pretrain_iterations)),
+                        allow_pickle=True, encoding="latin1").tolist()
+                    inner_lrs = np.load(os.path.join(weights_save_dir, "inner_lrs_{}.npy".format(FLAGS.pretrain_iterations)),
                         allow_pickle=True, encoding="latin1").tolist()
 
                     # Assign pretrained weights to tensorflow variables
                     for key in weights.keys():
                         self.sess.run(tf.assign(self.model.weights[key], weights[key]))
                     for key in bn_vars.keys():
-                        for step in range(FLAGS.train_base_epoch_num):
-                            self.sess.run(tf.assign(self.model.bn_vars[key + str(step)], bn_vars[key]))
+                        self.sess.run(tf.assign(self.model.bn_vars[key], bn_vars[key]))
+                    for idx in range(len(inner_lrs)):
+                        self.sess.run(tf.assign(self.model.inner_lrs[idx], inner_lrs[idx]))
+
                     print('Pretrain weights loaded, saving init weights')
                     # Load and save init weights for the model
                     new_weights = self.sess.run(self.model.weights)
                     new_bn_vars = self.sess.run(self.model.bn_vars)
+                    new_inner_lrs = self.sess.run(self.model.inner_lrs)
                     #fc_weights = self.sess.run(self.model.fc_weights)
+
                     np.save(this_init_dir + 'weights_init.npy', new_weights)
                     np.save(this_init_dir + 'bn_vars_init.npy', new_bn_vars)
+                    np.save(this_init_dir + 'inner_lrs_init.npy', new_inner_lrs)
                     #np.save(this_init_dir + 'fc_weights_init.npy', fc_weights)
                 else:
                     # If the initialization weights are already generated, load the previous saved ones
