@@ -16,7 +16,7 @@ class Models:
         # Load base learning rates from FLAGS
         self.update_lr = FLAGS.base_lr
         # Load the pre-train phase class number from FLAGS
-        self.pretrain_class_num = FLAGS.pretrain_class_num
+        self.pretrain_class_num = FLAGS.pre_way_num
         # Set the initial meta learning rate
         self.meta_lr = tf.placeholder_with_default(FLAGS.meta_lr, ())
         # Set the initial pre-train learning rate
