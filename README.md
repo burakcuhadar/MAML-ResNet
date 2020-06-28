@@ -1,4 +1,4 @@
-# MAML
+# Proto-MAML++ and MAML++
 
 The source code in this repository is adapted from [Meta-Transfer Learning for Few-Shot Learning](https://github.com/yaoyao-liu/meta-transfer-learning).
 
