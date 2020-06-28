@@ -4,9 +4,7 @@ The source code in this repository is adapted from [Meta-Transfer Learning for F
 
 The following changes are made:
 * "meta-model.py" is modified to match the implementation of [MAML](https://github.com/cbfinn/maml).
-* Implementation of the four-layer convolutional neural network architecture is added.
+* Implemented the four-layer CNN proposed by [Vinyals et al.](https://arxiv.org/abs/1606.04080) and six-layer CNN proposed by [Wei-Yu Chen et al.](https://arxiv.org/abs/1904.04232)
 * Inner loop learning rates and gradient directions are learned per layer per step as suggested by [Antoniou et al.](https://arxiv.org/abs/1810.09502).
-* Batch normalization layer improvements suggested by Antoniou et al. are implemented.
-* conv6 architecture is added.
+* "Per-Step Batch Normalization Weights and Biases" improvement suggested by [Antoniou et al.](https://arxiv.org/abs/1810.09502) are implemented.
 * Proto-MAML is implemented according to [Triantafillou et al.](https://arxiv.org/abs/1903.03096).
-* Input pipeline is improved using tensorflow queues, like it is done in [MAML](https://github.com/cbfinn/maml).
