@@ -9,6 +9,17 @@ The following changes are made:
 * "Per-Step Batch Normalization Weights and Biases" improvement suggested by [Antoniou et al.](https://arxiv.org/abs/1810.09502) are implemented.
 * Proto-MAML is implemented according to [Triantafillou et al.](https://arxiv.org/abs/1903.03096).
 
+## Results on [HAM10000 skin disease dataset](https://www.nature.com/articles/sdata2018161)
+| Model | Backbone | Accuracy | AUC |
+|---|---|---|---|
+|  Proto-MAML++(ours) | Conv6  | 79.93% | 85.84%    |
+| MAML++(ours)  |  Conv6 |   78.92% | 84.46%   |
+|  DAML* | Conv4  |  - |  83.30% |
+|  MAML* | Conv4  |  - |  81.20% |
+|  Relation Net* | Conv4  | - | 72.40%  |
+
+\* from [Difficulty-aware Meta-Learning for Rare Disease Diagnosis, Xiaomeng Li et al.](https://arxiv.org/abs/1907.00354)
+
 ## How to reproduce our results?
 1. Train the model on  [Mini-Imagenet](https://github.com/yaoyao-liu/mini-imagenet-tools).
 ```
